@@ -47,6 +47,13 @@ price) if you ever hit a recipe Sonnet structures poorly. Everything else —
 URL parsing, rendering, editing — costs nothing, and conversions that fail
 before reaching the model (bad URL, blocked site) aren't billed.
 
+## Troubleshooting
+
+- **A URL won't convert.** Some recipe sites block all server-side readers.
+  The app retries via the page's latest Internet Archive snapshot; if the site
+  is blocked *and* unarchived, copy the page text into the Paste tab or
+  screenshot it for the Photo/PDF tab — those paths always work.
+
 ## Layout of the code
 
 ```
