@@ -404,6 +404,101 @@ button.linkish {
   box-sizing: border-box;
 }
 
+/* ---- Compact layout for narrow (portrait-phone) screens ----
+   `screen and` keeps these out of print; the export stage is excluded by
+   scoping table rules to .table-wrap, so saved images/PDFs stay full-size. */
+
+@media screen and (max-width: 600px) {
+  #app {
+    padding: 0.75rem 0.6rem 3rem;
+  }
+
+  header.site {
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+  }
+
+  header.site h1 {
+    font-size: 1.15rem;
+    white-space: nowrap;
+  }
+
+  /* One-line header: the tagline still shows on landscape/tablet/desktop. */
+  header.site .tagline {
+    display: none;
+  }
+
+  .panel {
+    padding: 0.6rem;
+    margin-bottom: 1rem;
+  }
+
+  .tabs button {
+    padding: 0.25rem 0.6rem;
+    font-size: 0.85rem;
+  }
+
+  .tab-body textarea {
+    min-height: 7rem;
+  }
+
+  .dropzone {
+    padding: 1rem 0.6rem;
+    font-size: 0.85rem;
+  }
+
+  button.primary {
+    padding: 0.4rem 1rem;
+  }
+
+  .toolbar {
+    gap: 0.4rem;
+    margin: 0.6rem 0;
+  }
+
+  button.ghost {
+    padding: 0.28rem 0.6rem;
+    font-size: 0.85rem;
+  }
+
+  .view-bar {
+    gap: 0.4rem 0.9rem;
+    margin-bottom: 0.6rem;
+    font-size: 0.8rem;
+  }
+
+  .view-bar .seg button {
+    padding: 0.24rem 0.45rem;
+  }
+
+  .table-wrap {
+    padding: 0.5rem;
+  }
+
+  /* Smaller editable table on screen only; body.print-measure lifts the
+     shrink so setupPrintFit can measure the full-size layout (see print.ts). */
+  body:not(.print-measure) .table-wrap .recipe-table {
+    font-size: 0.8rem;
+  }
+
+  body:not(.print-measure) .table-wrap .recipe-table th,
+  body:not(.print-measure) .table-wrap .recipe-table td {
+    padding: 0.3rem 0.4rem;
+  }
+
+  body:not(.print-measure) .table-wrap .recipe-table .title-row th {
+    font-size: 0.95rem;
+  }
+
+  .recents {
+    font-size: 0.9rem;
+  }
+
+  .recents h2 {
+    font-size: 0.95rem;
+  }
+}
+
 .spinner {
   display: inline-block;
   width: 1em;

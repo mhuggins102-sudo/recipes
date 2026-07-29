@@ -21,7 +21,7 @@ function load(): RecentEntry[] {
   }
 }
 
-/** Enforce the cap, evicting oldest non-favorites first (entries are newest-first). */
+/** Enforce the cap, evicting least-recently-used non-favorites first (entries are MRU-first). */
 function capped(entries: RecentEntry[], max: number): RecentEntry[] {
   if (entries.length <= max) return entries;
   const favs = entries.filter((e) => e.fav);
@@ -43,9 +43,19 @@ function store(entries: RecentEntry[]): void {
   }
 }
 
-/** Newest-first, as stored; favorites are not reordered here — that's display policy. */
+/** Most recently added/viewed first, as stored; favorites are not reordered here — that's display policy. */
 export function listRecents(): RecentEntry[] {
   return load();
+}
+
+/** Move an entry to the front — viewing counts as recency for display and eviction. */
+export function touchRecent(id: string): void {
+  const entries = load();
+  const i = entries.findIndex((e) => e.id === id);
+  if (i <= 0) return; // absent, or already first
+  const [entry] = entries.splice(i, 1);
+  entries.unshift(entry);
+  store(entries);
 }
 
 export function saveRecent(recipe: RecipeTree): string {

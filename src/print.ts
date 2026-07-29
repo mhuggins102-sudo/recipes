@@ -22,7 +22,11 @@ export function setupPrintFit(getTable: () => HTMLElement | null): void {
   window.addEventListener("beforeprint", () => {
     const table = getTable();
     if (!table) return;
+    // Narrow screens shrink the on-screen table, but print renders full-size —
+    // lift the compaction (see main.css) while measuring so zoom fits the page.
+    document.body.classList.add("print-measure");
     const { width, height } = { width: table.offsetWidth, height: table.offsetHeight };
+    document.body.classList.remove("print-measure");
     if (!width || !height) return;
 
     const portraitZoom = fit(width, height, PORTRAIT);
