@@ -1,0 +1,39 @@
+@media print {
+  body {
+    background: white;
+  }
+
+  header.site .tagline,
+  .panel,
+  .toolbar,
+  .recents,
+  .error-box,
+  .hint,
+  .json-editor {
+    display: none !important;
+  }
+
+  #app {
+    max-width: none;
+    padding: 0;
+  }
+
+  .table-wrap {
+    border: none;
+    padding: 0;
+    overflow: visible;
+  }
+
+  table.recipe-table th,
+  table.recipe-table td {
+    border-color: black;
+  }
+
+  table.recipe-table {
+    page-break-inside: auto;
+  }
+
+  table.recipe-table tr {
+    page-break-inside: avoid;
+  }
+}
