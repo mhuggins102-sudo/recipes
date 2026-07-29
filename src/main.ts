@@ -2,11 +2,13 @@ import "./styles/main.css";
 import "./styles/print.css";
 import { RecipeTreeZ, type RecipeTree } from "../shared/schema";
 import { convert, type ConvertRequest } from "./api";
+import { applyView, unscaleQuantity } from "./quantity";
 import { renderTable } from "./render/table";
 import { SAMPLE_RECIPE } from "./sample";
 import { enableInlineEditing } from "./ui/editor";
 import { createInputPanel } from "./ui/inputPanel";
-import { getRecent, listRecents, saveRecent, updateRecent } from "./ui/recents";
+import { getRecent, listRecents, saveRecent, toggleFavorite, updateRecent } from "./ui/recents";
+import { createViewBar } from "./ui/viewBar";
 
 const app = document.getElementById("app")!;
 
@@ -33,6 +35,8 @@ const printBtn = button("ghost", "Print");
 const resetBtn = button("ghost", "Start over");
 toolbar.append(jsonBtn, printBtn, resetBtn);
 
+const viewBar = createViewBar(() => rerenderTable());
+
 const tableWrap = document.createElement("div");
 tableWrap.className = "table-wrap";
 
@@ -49,7 +53,7 @@ hint.className = "hint";
 hint.textContent =
   "Every cell is editable — click into it and type. Use Edit JSON to restructure the tree (move ingredients between steps, add branches).";
 
-resultSection.append(toolbar, tableWrap, hint, jsonEditor, jsonApply, jsonError);
+resultSection.append(toolbar, viewBar.el, tableWrap, hint, jsonEditor, jsonApply, jsonError);
 
 const recentsSection = document.createElement("section");
 recentsSection.className = "recents";
@@ -111,6 +115,7 @@ async function startConversion(req: ConvertRequest) {
 
 function show(recipe: RecipeTree) {
   current = recipe;
+  viewBar.resetScale();
   resultSection.style.display = "";
   jsonEditor.style.display = "none";
   jsonApply.style.display = "none";
@@ -122,8 +127,11 @@ function show(recipe: RecipeTree) {
 function rerenderTable() {
   if (!current) return;
   tableWrap.innerHTML = "";
-  tableWrap.appendChild(renderTable(current));
-  enableInlineEditing(tableWrap, () => current!, persistSoon);
+  // Render a derived view; `current` stays at 1× in the source's own style.
+  tableWrap.appendChild(renderTable(applyView(current, viewBar.view)));
+  enableInlineEditing(tableWrap, () => current!, persistSoon, (text, kind) =>
+    kind === "quantity" || kind === "servings" ? unscaleQuantity(text, viewBar.view) : text,
+  );
 }
 
 function persistSoon(recipe: RecipeTree) {
@@ -176,6 +184,9 @@ resetBtn.addEventListener("click", () => {
 
 // --- Recents / demo --------------------------------------------------------
 
+const RECENTS_COLLAPSED_COUNT = 5;
+let recentsExpanded = false;
+
 function renderRecents() {
   const entries = listRecents();
   recentsSection.innerHTML = "";
@@ -198,8 +209,20 @@ function renderRecents() {
     ul.appendChild(li);
   }
 
-  for (const entry of entries) {
+  // Favorites pin to the top; within each group, newest first (stored order).
+  const ordered = [...entries.filter((e) => e.fav), ...entries.filter((e) => !e.fav)];
+  const visible = recentsExpanded ? ordered : ordered.slice(0, RECENTS_COLLAPSED_COUNT);
+
+  for (const entry of visible) {
     const li = document.createElement("li");
+    const star = document.createElement("button");
+    star.className = entry.fav ? "star faved" : "star";
+    star.textContent = entry.fav ? "★" : "☆";
+    star.title = entry.fav ? "Unpin from the top of this list" : "Pin to the top of this list";
+    star.addEventListener("click", () => {
+      toggleFavorite(entry.id);
+      renderRecents();
+    });
     const a = document.createElement("a");
     a.href = "#";
     a.textContent = entry.title;
@@ -214,10 +237,23 @@ function renderRecents() {
     const when = document.createElement("span");
     when.className = "when";
     when.textContent = new Date(entry.ts).toLocaleDateString();
-    li.append(a, when);
+    li.append(star, a, when);
     ul.appendChild(li);
   }
   recentsSection.appendChild(ul);
+
+  if (ordered.length > RECENTS_COLLAPSED_COUNT) {
+    const more = document.createElement("button");
+    more.className = "linkish";
+    more.textContent = recentsExpanded
+      ? "Show fewer"
+      : `Show all (${ordered.length})`;
+    more.addEventListener("click", () => {
+      recentsExpanded = !recentsExpanded;
+      renderRecents();
+    });
+    recentsSection.appendChild(more);
+  }
 }
 
 renderRecents();
