@@ -2,7 +2,8 @@ import "./styles/main.css";
 import "./styles/print.css";
 import { RecipeTreeZ, type RecipeTree } from "../shared/schema";
 import { convert, type ConvertRequest } from "./api";
-import { downloadImage, exportTableImage, shareImage } from "./export/image";
+import { downloadFile, exportTableImage, shareImage } from "./export/image";
+import { exportTablePdf } from "./export/pdf";
 import { setupPrintFit } from "./print";
 import { applyView, unscaleQuantity } from "./quantity";
 import { renderTable } from "./render/table";
@@ -15,6 +16,7 @@ import {
   removeRecent,
   saveRecent,
   toggleFavorite,
+  touchRecent,
   updateRecent,
 } from "./ui/recents";
 import { createViewBar } from "./ui/viewBar";
@@ -39,12 +41,18 @@ resultSection.style.display = "none";
 
 const toolbar = document.createElement("div");
 toolbar.className = "toolbar";
-const jsonBtn = button("ghost", "Edit JSON");
 const saveImgBtn = button("ghost", "Save image");
+const savePdfBtn = button("ghost", "Save PDF");
 const shareBtn = button("ghost", "Share");
 const printBtn = button("ghost", "Print");
 const resetBtn = button("ghost", "Start over");
-toolbar.append(jsonBtn, saveImgBtn, shareBtn, printBtn, resetBtn);
+toolbar.append(saveImgBtn, savePdfBtn, shareBtn, printBtn, resetBtn);
+
+// Edit JSON lives below the table — it's a restructuring tool, not a daily action.
+const belowToolbar = document.createElement("div");
+belowToolbar.className = "toolbar";
+const jsonBtn = button("ghost", "Edit JSON");
+belowToolbar.append(jsonBtn);
 
 const viewBar = createViewBar(() => rerenderTable());
 
@@ -64,7 +72,7 @@ hint.className = "hint";
 hint.textContent =
   "Every cell is editable — click into it and type. Use Edit JSON to restructure the tree (move ingredients between steps, add branches).";
 
-resultSection.append(toolbar, viewBar.el, tableWrap, hint, jsonEditor, jsonApply, jsonError);
+resultSection.append(toolbar, viewBar.el, tableWrap, hint, belowToolbar, jsonEditor, jsonApply, jsonError);
 
 const recentsSection = document.createElement("section");
 recentsSection.className = "recents";
@@ -189,38 +197,50 @@ async function exportCurrent(): Promise<ReturnType<typeof exportTableImage> | nu
   return exportTableImage(applyView(current, viewBar.view), viewBar.view.labels);
 }
 
-saveImgBtn.addEventListener("click", async () => {
-  const busy = saveImgBtn.textContent;
-  saveImgBtn.textContent = "Rendering…";
-  saveImgBtn.disabled = true;
-  try {
-    const image = await exportCurrent();
-    if (image) downloadImage(image);
-  } catch (err) {
-    showError(err instanceof Error ? err.message : String(err));
-  } finally {
-    saveImgBtn.textContent = busy;
-    saveImgBtn.disabled = false;
-  }
-});
+/** Wrap an export action with the busy label / disable / error plumbing. */
+function busyWhile(btn: HTMLButtonElement, action: () => Promise<void>): () => Promise<void> {
+  return async () => {
+    const label = btn.textContent;
+    btn.textContent = "Rendering…";
+    btn.disabled = true;
+    try {
+      await action();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : String(err));
+    } finally {
+      btn.textContent = label;
+      btn.disabled = false;
+    }
+  };
+}
 
-shareBtn.addEventListener("click", async () => {
-  const busy = shareBtn.textContent;
-  shareBtn.textContent = "Rendering…";
-  shareBtn.disabled = true;
-  try {
+saveImgBtn.addEventListener(
+  "click",
+  busyWhile(saveImgBtn, async () => {
+    const image = await exportCurrent();
+    if (image) downloadFile(image.blob, image.filename);
+  }),
+);
+
+savePdfBtn.addEventListener(
+  "click",
+  busyWhile(savePdfBtn, async () => {
+    if (!current) return;
+    const pdf = await exportTablePdf(applyView(current, viewBar.view), viewBar.view.labels);
+    downloadFile(pdf.blob, pdf.filename);
+  }),
+);
+
+shareBtn.addEventListener(
+  "click",
+  busyWhile(shareBtn, async () => {
     const image = await exportCurrent();
     if (image && !(await shareImage(image, current?.title ?? "Recipe"))) {
       // No native share sheet on this device/browser — download instead.
-      downloadImage(image);
+      downloadFile(image.blob, image.filename);
     }
-  } catch (err) {
-    showError(err instanceof Error ? err.message : String(err));
-  } finally {
-    shareBtn.textContent = busy;
-    shareBtn.disabled = false;
-  }
-});
+  }),
+);
 
 printBtn.addEventListener("click", () => window.print());
 
@@ -237,7 +257,7 @@ resetBtn.addEventListener("click", () => {
 
 // --- Recents / demo --------------------------------------------------------
 
-const RECENTS_COLLAPSED_COUNT = 5;
+const RECENTS_COLLAPSED_COUNT = 10;
 let recentsExpanded = false;
 
 function renderRecents() {
@@ -262,7 +282,8 @@ function renderRecents() {
     ul.appendChild(li);
   }
 
-  // Favorites pin to the top; within each group, newest first (stored order).
+  // Favorites pin to the top; within each group, most recently added or
+  // viewed first (stored order — viewing an entry moves it to the front).
   const ordered = [...entries.filter((e) => e.fav), ...entries.filter((e) => !e.fav)];
   const visible = recentsExpanded ? ordered : ordered.slice(0, RECENTS_COLLAPSED_COUNT);
 
@@ -284,7 +305,9 @@ function renderRecents() {
       const recipe = getRecent(entry.id);
       if (recipe) {
         currentId = entry.id;
+        touchRecent(entry.id);
         show(recipe);
+        renderRecents();
       }
     });
     const when = document.createElement("span");
