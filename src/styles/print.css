@@ -23,6 +23,8 @@
     border: none;
     padding: 0;
     overflow: visible;
+    /* Set by setupPrintFit (beforeprint) so the table fits one page. */
+    zoom: var(--print-zoom, 1);
   }
 
   table.recipe-table th,

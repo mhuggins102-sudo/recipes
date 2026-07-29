@@ -2,12 +2,21 @@ import "./styles/main.css";
 import "./styles/print.css";
 import { RecipeTreeZ, type RecipeTree } from "../shared/schema";
 import { convert, type ConvertRequest } from "./api";
+import { downloadImage, exportTableImage, shareImage } from "./export/image";
+import { setupPrintFit } from "./print";
 import { applyView, unscaleQuantity } from "./quantity";
 import { renderTable } from "./render/table";
 import { SAMPLE_RECIPE } from "./sample";
 import { enableInlineEditing } from "./ui/editor";
 import { createInputPanel } from "./ui/inputPanel";
-import { getRecent, listRecents, saveRecent, toggleFavorite, updateRecent } from "./ui/recents";
+import {
+  getRecent,
+  listRecents,
+  removeRecent,
+  saveRecent,
+  toggleFavorite,
+  updateRecent,
+} from "./ui/recents";
 import { createViewBar } from "./ui/viewBar";
 
 const app = document.getElementById("app")!;
@@ -31,9 +40,11 @@ resultSection.style.display = "none";
 const toolbar = document.createElement("div");
 toolbar.className = "toolbar";
 const jsonBtn = button("ghost", "Edit JSON");
+const saveImgBtn = button("ghost", "Save image");
+const shareBtn = button("ghost", "Share");
 const printBtn = button("ghost", "Print");
 const resetBtn = button("ghost", "Start over");
-toolbar.append(jsonBtn, printBtn, resetBtn);
+toolbar.append(jsonBtn, saveImgBtn, shareBtn, printBtn, resetBtn);
 
 const viewBar = createViewBar(() => rerenderTable());
 
@@ -172,7 +183,48 @@ jsonApply.addEventListener("click", () => {
   }
 });
 
+async function exportCurrent(): Promise<ReturnType<typeof exportTableImage> | null> {
+  if (!current) return null;
+  // Export what's on screen: same derived view (units, scale, brief labels).
+  return exportTableImage(applyView(current, viewBar.view), viewBar.view.labels);
+}
+
+saveImgBtn.addEventListener("click", async () => {
+  const busy = saveImgBtn.textContent;
+  saveImgBtn.textContent = "Rendering…";
+  saveImgBtn.disabled = true;
+  try {
+    const image = await exportCurrent();
+    if (image) downloadImage(image);
+  } catch (err) {
+    showError(err instanceof Error ? err.message : String(err));
+  } finally {
+    saveImgBtn.textContent = busy;
+    saveImgBtn.disabled = false;
+  }
+});
+
+shareBtn.addEventListener("click", async () => {
+  const busy = shareBtn.textContent;
+  shareBtn.textContent = "Rendering…";
+  shareBtn.disabled = true;
+  try {
+    const image = await exportCurrent();
+    if (image && !(await shareImage(image, current?.title ?? "Recipe"))) {
+      // No native share sheet on this device/browser — download instead.
+      downloadImage(image);
+    }
+  } catch (err) {
+    showError(err instanceof Error ? err.message : String(err));
+  } finally {
+    shareBtn.textContent = busy;
+    shareBtn.disabled = false;
+  }
+});
+
 printBtn.addEventListener("click", () => window.print());
+
+setupPrintFit(() => tableWrap.querySelector("table.recipe-table"));
 
 resetBtn.addEventListener("click", () => {
   current = null;
@@ -238,7 +290,17 @@ function renderRecents() {
     const when = document.createElement("span");
     when.className = "when";
     when.textContent = new Date(entry.ts).toLocaleDateString();
-    li.append(star, a, when);
+    const del = document.createElement("button");
+    del.className = "del";
+    del.textContent = "✕";
+    del.title = "Delete this recipe";
+    del.addEventListener("click", () => {
+      if (!confirm(`Delete "${entry.title}"? This can't be undone.`)) return;
+      removeRecent(entry.id);
+      if (currentId === entry.id) currentId = null;
+      renderRecents();
+    });
+    li.append(star, a, when, del);
     ul.appendChild(li);
   }
   recentsSection.appendChild(ul);

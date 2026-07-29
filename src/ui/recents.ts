@@ -74,3 +74,7 @@ export function toggleFavorite(id: string): void {
   entry.fav = !entry.fav;
   store(entries);
 }
+
+export function removeRecent(id: string): void {
+  store(load().filter((e) => e.id !== id));
+}

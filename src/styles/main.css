@@ -365,6 +365,22 @@ table.recipe-table {
   color: #d9a012;
 }
 
+.recents .del {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  color: #c0392b;
+  padding: 0 0.15rem;
+  margin-left: 0.45rem;
+  opacity: 0.55;
+}
+
+.recents .del:hover {
+  opacity: 1;
+}
+
 button.linkish {
   border: none;
   background: none;
@@ -375,6 +391,17 @@ button.linkish {
   text-decoration: underline;
   padding: 0;
   margin-top: 0.5rem;
+}
+
+/* Offscreen stage for PNG export — must be laid out, so park it off-viewport
+   rather than display:none. */
+.export-stage {
+  position: absolute;
+  left: -100000px;
+  top: 0;
+  background: white;
+  padding: 20px;
+  box-sizing: border-box;
 }
 
 .spinner {
