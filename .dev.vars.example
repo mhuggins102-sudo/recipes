@@ -1,0 +1,4 @@
+# Copy to .dev.vars (gitignored) and fill in for local development.
+# In production, set ANTHROPIC_API_KEY as an encrypted secret in the
+# Cloudflare Pages dashboard (Settings -> Environment variables).
+ANTHROPIC_API_KEY=sk-ant-...
