@@ -153,3 +153,17 @@ export function stripHtmlToText(html: string): string {
 export function truncate(s: string, max = MAX_TEXT_CHARS): string {
   return s.length > max ? `${s.slice(0, max)}\n[...truncated]` : s;
 }
+
+// --- Model output parsing -------------------------------------------------
+
+/**
+ * Pull the JSON object out of model output that may wrap it in markdown
+ * fences or stray prose: the substring from the first "{" to the last "}".
+ * Returns null when the text contains no object.
+ */
+export function extractJsonObject(text: string): string | null {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end <= start) return null;
+  return text.slice(start, end + 1);
+}

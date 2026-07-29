@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractJsonLdRecipe, stripHtmlToText } from "../shared/extract";
+import { extractJsonLdRecipe, extractJsonObject, stripHtmlToText } from "../shared/extract";
 
 function page(ldJson: unknown): string {
   return `<html><head>
@@ -105,5 +105,27 @@ describe("stripHtmlToText", () => {
     const text = stripHtmlToText(`<p>${"a".repeat(50_000)}</p>`);
     expect(text.length).toBeLessThan(31_000);
     expect(text).toContain("[...truncated]");
+  });
+});
+
+describe("extractJsonObject", () => {
+  const obj = `{"title": "Pie", "tree": {"kind": "step"}}`;
+
+  it("returns a bare object unchanged", () => {
+    expect(extractJsonObject(obj)).toBe(obj);
+  });
+
+  it("strips markdown fences", () => {
+    expect(extractJsonObject("```json\n" + obj + "\n```")).toBe(obj);
+  });
+
+  it("strips surrounding prose", () => {
+    expect(extractJsonObject(`Here is the recipe tree:\n${obj}\nLet me know!`)).toBe(obj);
+  });
+
+  it("returns null when no object is present", () => {
+    expect(extractJsonObject("no json here")).toBeNull();
+    expect(extractJsonObject("}{")).toBeNull();
+    expect(extractJsonObject("")).toBeNull();
   });
 });

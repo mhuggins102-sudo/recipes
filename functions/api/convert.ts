@@ -1,12 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { MODEL, RecipeTreeZ, SYSTEM_PROMPT, type RecipeTree } from "../../shared/schema";
 import {
-  MODEL,
-  RecipeTreeZ,
-  SYSTEM_PROMPT,
-  recipeJsonSchema,
-  type RecipeTree,
-} from "../../shared/schema";
-import { extractJsonLdRecipe, stripHtmlToText, truncate } from "../../shared/extract";
+  extractJsonLdRecipe,
+  extractJsonObject,
+  stripHtmlToText,
+  truncate,
+} from "../../shared/extract";
 
 interface Env {
   ANTHROPIC_API_KEY?: string;
@@ -185,13 +184,31 @@ function errorPayload(err: unknown): { status: number; message: string } {
     if (err.status === 429) {
       return { status: 429, message: "The converter is busy right now — try again in a minute." };
     }
+    // Surface the real API error instead of a generic message — a masked
+    // failure here previously made a request bug look like a model outage.
+    console.error("Anthropic API error", err.status, err.message);
+    const detail = apiErrorDetail(err);
+    if (err.status === 400) {
+      return {
+        status: 502,
+        message: `The model rejected the conversion request (${detail}). This is likely a bug in the site, not a problem with your recipe — please report it.`,
+      };
+    }
     return {
       status: 502,
-      message: "The conversion model is temporarily unavailable. Try again shortly.",
+      message: `The conversion model call failed (${detail}). Try again shortly.`,
     };
   }
   console.error("convert failed", err);
   return { status: 500, message: "Unexpected server error." };
+}
+
+/** Compact "status: message" line from an SDK error, capped for display. */
+function apiErrorDetail(err: InstanceType<typeof Anthropic.APIError>): string {
+  const body = err.error as { error?: { message?: string } } | undefined;
+  const message = body?.error?.message ?? err.message ?? "no details";
+  const status = err.status ?? "network error";
+  return truncate(`${status}: ${message}`, 200);
 }
 
 type ContentBlock = Anthropic.Messages.ContentBlockParam;
@@ -366,7 +383,11 @@ async function convertWithModel(
 
   for (let attempt = 0; attempt < 2; attempt++) {
     // Streaming keeps the Anthropic leg alive during long thinking; we only
-    // need the final message.
+    // need the final message. No structured-outputs json_schema here: the
+    // recipe tree is recursive, and the depth-unrolled schema we sent instead
+    // consistently failed in server-side grammar compilation, taking ~90 s
+    // (SDK retries included) to surface as "model temporarily unavailable".
+    // The prompt specifies the shape; RecipeTreeZ + the repair loop enforce it.
     const stream = client.messages.stream({
       model: MODEL,
       max_tokens: 16000,
@@ -375,7 +396,6 @@ async function convertWithModel(
         // Medium effort trims reasoning-token spend; extraction doesn't need
         // deep thinking, and reasoning tokens bill as output.
         effort: "medium",
-        format: { type: "json_schema", schema: recipeJsonSchema },
       },
       messages,
     } as Anthropic.Messages.MessageStreamParams);
@@ -395,7 +415,8 @@ async function convertWithModel(
 
     let parsed: unknown;
     try {
-      parsed = JSON.parse(text);
+      // Tolerate markdown fences or stray prose around the object.
+      parsed = JSON.parse(extractJsonObject(text) ?? text);
     } catch {
       lastValidationError = "output was not valid JSON";
       onPhase("revalidating");

@@ -77,69 +77,6 @@ export const RecipeTreeZ: z.ZodType<RecipeTree> = z
   });
 
 // ---------------------------------------------------------------------------
-// JSON Schema for the Anthropic structured-outputs call.
-//
-// Structured outputs reject recursive schemas, so the node union is
-// mechanically unrolled to a fixed depth. Constraints like minItems are also
-// unsupported; "every step has >= 1 child" is enforced by RecipeTreeZ above.
-// ---------------------------------------------------------------------------
-
-const UNROLL_DEPTH = 10;
-
-const ingredientJsonSchema = {
-  type: "object",
-  properties: {
-    kind: { const: "ingredient" },
-    quantity: { type: "string" },
-    name: { type: "string" },
-    note: { type: "string" },
-  },
-  required: ["kind", "quantity", "name"],
-  additionalProperties: false,
-} as const;
-
-function nodeJsonSchema(depth: number): object {
-  if (depth === 0) return ingredientJsonSchema;
-  return {
-    anyOf: [
-      ingredientJsonSchema,
-      {
-        type: "object",
-        properties: {
-          kind: { const: "step" },
-          label: { type: "string" },
-          children: { type: "array", items: nodeJsonSchema(depth - 1) },
-        },
-        required: ["kind", "label", "children"],
-        additionalProperties: false,
-      },
-    ],
-  };
-}
-
-export const recipeJsonSchema = {
-  type: "object",
-  properties: {
-    title: { type: "string" },
-    servings: { type: "string" },
-    setup: { type: "array", items: { type: "string" } },
-    tree: {
-      type: "object",
-      properties: {
-        kind: { const: "step" },
-        label: { type: "string" },
-        children: { type: "array", items: nodeJsonSchema(UNROLL_DEPTH - 1) },
-      },
-      required: ["kind", "label", "children"],
-      additionalProperties: false,
-    },
-    notes: { type: "array", items: { type: "string" } },
-  },
-  required: ["title", "setup", "tree"],
-  additionalProperties: false,
-};
-
-// ---------------------------------------------------------------------------
 // Model configuration and system prompt (frozen constant -> prompt-cacheable)
 // ---------------------------------------------------------------------------
 
@@ -187,7 +124,18 @@ const EXAMPLE: RecipeTree = {
   },
 };
 
+// The output contract lives in this prompt (with Zod validation server-side)
+// rather than in a structured-outputs json_schema: the tree type is recursive,
+// and the depth-unrolled schema we sent instead made every conversion fail
+// during server-side grammar compilation.
 export const SYSTEM_PROMPT = `You convert recipes into a strict tree structure that is rendered as a "Cooking for Engineers"-style tabular diagram.
+
+Output format:
+- Respond with a single JSON object and nothing else — no markdown fences, no commentary, no text before or after it.
+- Shape: {"title": string, "servings"?: string, "setup": string[], "tree": Step, "notes"?: string[]}
+  where Step = {"kind": "step", "label": string, "children": (Step | Ingredient)[]} with children non-empty,
+  and Ingredient = {"kind": "ingredient", "quantity": string, "name": string, "note"?: string}.
+- Steps nest at most 12 levels deep.
 
 Structure rules:
 - Ingredients are leaves. Every cooking action is a step node whose children are exactly the ingredients and sub-mixtures that go INTO that action. The final action is the root of the tree.
