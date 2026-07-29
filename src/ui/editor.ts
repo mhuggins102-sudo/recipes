@@ -18,6 +18,9 @@ export function enableInlineEditing(
   mapText: (text: string, kind: EditKind) => string = (text) => text,
 ): void {
   for (const el of container.querySelectorAll<HTMLElement>(EDITABLE_SELECTOR)) {
+    // Brief-mode labels are a lossy rendering — editing them would overwrite
+    // the full text, so the renderer marks them read-only.
+    if (el.dataset.readonly) continue;
     // Firefox doesn't support "plaintext-only"; fall back to true there.
     el.setAttribute("contenteditable", "plaintext-only");
     if (!el.isContentEditable) el.setAttribute("contenteditable", "true");

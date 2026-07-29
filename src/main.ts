@@ -129,7 +129,7 @@ function rerenderTable() {
   if (!current) return;
   tableWrap.innerHTML = "";
   // Render a derived view; `current` stays at 1× in the source's own style.
-  tableWrap.appendChild(renderTable(applyView(current, viewBar.view)));
+  tableWrap.appendChild(renderTable(applyView(current, viewBar.view), viewBar.view.labels));
   enableInlineEditing(tableWrap, () => current!, persistSoon, (text, kind) =>
     kind === "quantity" || kind === "servings" ? unscaleQuantity(text, viewBar.view) : text,
   );

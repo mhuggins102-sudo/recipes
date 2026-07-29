@@ -11,9 +11,16 @@ export interface ViewOptions {
   numbers: "original" | "fractions" | "decimals";
   /** Recipe multiplier; 1 leaves quantities untouched. */
   scale: number;
+  /** Step-label style: "brief" shortens to key verb + time/temp (see labels.ts). */
+  labels: "full" | "brief";
 }
 
-export const DEFAULT_VIEW: ViewOptions = { units: "original", numbers: "original", scale: 1 };
+export const DEFAULT_VIEW: ViewOptions = {
+  units: "original",
+  numbers: "original",
+  scale: 1,
+  labels: "full",
+};
 
 // --- Number tokens ---------------------------------------------------------
 
