@@ -3,6 +3,7 @@ import { MODEL, RecipeTreeZ, SYSTEM_PROMPT, type RecipeTree } from "../../shared
 import {
   extractJsonLdRecipe,
   extractJsonObject,
+  findPrintLink,
   stripHtmlToText,
   truncate,
 } from "../../shared/extract";
@@ -28,7 +29,7 @@ interface ConvertRequest {
 }
 
 /** Progress phases streamed to the client while a conversion runs. */
-type Phase = "fetching" | "archive" | "model" | "revalidating";
+type Phase = "fetching" | "archive" | "print" | "model" | "revalidating";
 type PhaseEmitter = (phase: Phase) => void;
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
@@ -327,13 +328,41 @@ async function ingestUrl(raw: string, env: Env, onPhase: PhaseEmitter): Promise<
       "That site blocks automated readers and no archived copy was found. Open the page in your browser, select all (Ctrl/Cmd-A), copy, and use the Paste text tab — or screenshot the recipe and use Photo / PDF.",
     );
   }
+
+  let jsonLd = extractJsonLdRecipe(html);
+  let text = jsonLd ? null : stripHtmlToText(html);
+
+  // No structured data means the model would read the whole noisy page. A
+  // print view strips navigation/ads (and sometimes carries the JSON-LD the
+  // main page lacks), so spend one extra same-site fetch looking for it.
+  if (!jsonLd && !fromArchive) {
+    const printUrl = findPrintLink(html, url.toString());
+    if (printUrl) {
+      onPhase("print");
+      const printHtml = await fetchHtml(printUrl);
+      if (printHtml) {
+        jsonLd = extractJsonLdRecipe(printHtml);
+        if (!jsonLd) {
+          const printText = stripHtmlToText(printHtml);
+          // Only trust the print page when it plausibly IS the recipe and is
+          // actually leaner — a matched "print subscription" link fails this.
+          if (
+            /ingredient/i.test(printText) &&
+            printText.length >= 100 &&
+            printText.length < (text?.length ?? Infinity)
+          ) {
+            text = printText;
+          }
+        }
+      }
+    }
+  }
+
   const archiveNote = fromArchive
     ? "(Content retrieved from an archived copy of the page — ignore any archive banners or injected markup.)\n"
     : "";
-  const jsonLd = extractJsonLdRecipe(html);
   if (jsonLd) return archiveNote + jsonLd;
-  const text = stripHtmlToText(html);
-  if (text.length < 100) {
+  if (!text || text.length < 100) {
     throw new HttpError(
       422,
       "Couldn't find recipe content on that page — paste the recipe text instead.",

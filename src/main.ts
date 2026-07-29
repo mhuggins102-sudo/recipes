@@ -85,6 +85,7 @@ function clearError() {
 const PHASE_TEXT: Record<string, string> = {
   fetching: "Fetching the page…",
   archive: "Site blocks robots — trying the Internet Archive…",
+  print: "Busy page — reading its print version instead…",
   model: "Reading the recipe and building the tree…",
   revalidating: "Double-checking the structure…",
 };

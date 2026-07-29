@@ -21,15 +21,22 @@ function isRecipeObject(obj: Json): obj is Record<string, Json> {
   return asArray(type).some((t) => typeof t === "string" && t.toLowerCase() === "recipe");
 }
 
-/** Flatten JSON-LD shapes (top-level arrays, @graph) into candidate objects. */
+/**
+ * Collect every object in a JSON-LD document, parents before children. The
+ * Recipe is often not top-level: sites nest it in @graph, WebPage.hasPart
+ * (America's Test Kitchen), or mainEntity, so walk everything.
+ */
 function candidates(doc: Json): Json[] {
   const out: Json[] = [];
-  for (const item of asArray(doc)) {
-    out.push(item);
-    if (typeof item === "object" && item !== null && "@graph" in item) {
-      out.push(...asArray((item as Record<string, Json>)["@graph"]));
+  const walk = (v: Json): void => {
+    if (Array.isArray(v)) {
+      for (const item of v) walk(item);
+    } else if (typeof v === "object" && v !== null) {
+      out.push(v);
+      for (const value of Object.values(v)) walk(value);
     }
-  }
+  };
+  walk(doc);
   return out;
 }
 
@@ -152,6 +159,52 @@ export function stripHtmlToText(html: string): string {
 
 export function truncate(s: string, max = MAX_TEXT_CHARS): string {
   return s.length > max ? `${s.slice(0, max)}\n[...truncated]` : s;
+}
+
+// --- Print-view discovery -------------------------------------------------
+
+const ANCHOR_RE = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
+const HREF_RE = /href\s*=\s*(?:"([^"]*)"|'([^']*)')/i;
+// URL path/query segments that mark a dedicated print page.
+const PRINT_HREF_RE = /(^|[/?&#_-])print(view|able)?([/?&=._-]|$)/i;
+const PRINT_HINT_RE = /\bprint\b/i;
+
+/**
+ * Find a same-site "print this recipe" URL in a page — print views strip the
+ * navigation/ad noise that makes text fallback expensive. Prefers hrefs that
+ * look like print URLs; falls back to anchors whose text/class says "print".
+ * Returns an absolute URL, or null.
+ */
+export function findPrintLink(html: string, pageUrl: string): string | null {
+  let textMatch: string | null = null;
+  for (const anchor of html.matchAll(ANCHOR_RE)) {
+    const [, attrs, inner] = anchor;
+    const hrefMatch = HREF_RE.exec(attrs);
+    const resolved = resolveSameSite(hrefMatch?.[1] ?? hrefMatch?.[2], pageUrl);
+    if (!resolved) continue;
+    if (PRINT_HREF_RE.test(new URL(resolved).pathname + new URL(resolved).search)) {
+      return resolved;
+    }
+    if (textMatch === null && (PRINT_HINT_RE.test(inner) || PRINT_HINT_RE.test(attrs))) {
+      textMatch = resolved;
+    }
+  }
+  return textMatch;
+}
+
+function resolveSameSite(href: string | undefined, pageUrl: string): string | null {
+  if (!href || href.startsWith("#") || /^(javascript|mailto|tel):/i.test(href)) return null;
+  try {
+    const base = new URL(pageUrl);
+    const url = new URL(href, base);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (url.hostname.replace(/^www\./, "") !== base.hostname.replace(/^www\./, "")) return null;
+    url.hash = "";
+    if (url.toString() === base.toString()) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 // --- Model output parsing -------------------------------------------------
