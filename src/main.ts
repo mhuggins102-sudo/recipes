@@ -97,6 +97,19 @@ let persistTimer: ReturnType<typeof setTimeout> | undefined;
 /** Same breakpoint as the compact stylesheet in main.css (portrait phones). */
 const compactScreen = window.matchMedia("screen and (max-width: 600px)");
 
+/** Phones: scroll so the button row sits at the top and the table gets the
+    whole screen. Measured a frame later, after layout changes still queued by
+    the caller (busy status clearing, upload reset) have landed. */
+function parkToolbar() {
+  if (!compactScreen.matches) return;
+  requestAnimationFrame(() => {
+    window.scrollTo({
+      top: toolbar.getBoundingClientRect().top + window.scrollY - 8,
+      behavior: "smooth",
+    });
+  });
+}
+
 function button(cls: string, label: string): HTMLButtonElement {
   const b = document.createElement("button");
   b.className = cls;
@@ -156,14 +169,7 @@ function show(recipe: RecipeTree, view?: ViewOptions) {
   jsonError.textContent = "";
   jsonBtn.textContent = "Edit JSON";
   rerenderTable();
-  if (compactScreen.matches) {
-    // Small screens: park the toolbar at the top so the table gets the whole
-    // viewport; Back scrolls home to the input panel.
-    window.scrollTo({
-      top: toolbar.getBoundingClientRect().top + window.scrollY - 8,
-      behavior: "smooth",
-    });
-  }
+  parkToolbar();
 }
 
 function rerenderTable() {
@@ -205,8 +211,8 @@ jsonBtn.addEventListener("click", () => {
     jsonApply.style.display = "none";
     jsonBtn.textContent = "Edit JSON";
     jsonError.textContent = "";
-    // Hiding the editor goes home to the input panel, like Back does.
-    if (compactScreen.matches) window.scrollTo({ top: 0, behavior: "smooth" });
+    // Hiding the editor returns to the parked table view (button row on top).
+    parkToolbar();
   }
 });
 
