@@ -28,10 +28,16 @@ interface ConvertRequest {
   mediaType?: string;
 }
 
+/** Progress phases streamed to the client while a conversion runs. */
+type Phase = "fetching" | "archive" | "model" | "revalidating";
+type PhaseEmitter = (phase: Phase) => void;
+
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const MAX_PAGE_BYTES = 2 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // API per-image cap
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const PING_INTERVAL_MS = 10_000;
+const DEADLINE_MS = 270_000; // in-band failure well before any platform limit
 
 class HttpError extends Error {
   constructor(
@@ -65,65 +71,154 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return jsonError(400, "Missing payload.");
   }
 
+  // Cheap validation stays a plain JSON error response; only once real work
+  // (fetching, model call) starts do we switch to the streaming protocol.
   try {
-    const content = await buildUserContent(body, env);
-    const recipe = await convertWithModel(env, content);
-    return Response.json({ recipe });
+    validateRequest(body, env);
   } catch (err) {
     if (err instanceof HttpError) return jsonError(err.status, err.message);
-    if (err instanceof Anthropic.APIError) {
-      if (err.status === 401) {
-        return jsonError(
-          500,
-          "The server's Anthropic API key is missing or invalid — check the ANTHROPIC_API_KEY secret in Cloudflare Pages settings.",
-        );
-      }
-      if (err.status === 400 && /credit balance/i.test(err.message)) {
-        return jsonError(
-          402,
-          "Out of Anthropic API credits — conversions are paused until credits are added at console.anthropic.com. Nothing is charged automatically.",
-        );
-      }
-      if (err.status === 429) {
-        const retryAfter = err.headers?.get?.("retry-after") ?? undefined;
-        return jsonError(429, "The converter is busy right now — try again in a minute.", {
-          retryAfter,
-        });
-      }
-      return jsonError(502, "The conversion model is temporarily unavailable. Try again shortly.");
-    }
-    console.error("convert failed", err);
-    return jsonError(500, "Unexpected server error.");
+    throw err;
   }
+
+  // Long-running work streams NDJSON events — phases, keepalive pings, then a
+  // single terminal result/error — so no client, proxy, or network hop ever
+  // sees an idle connection while the model works.
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+  const started = Date.now();
+  const emit = (event: Record<string, unknown>) =>
+    writer.write(encoder.encode(`${JSON.stringify(event)}\n`)).catch(() => {});
+  const ping = setInterval(
+    () => emit({ type: "ping", t: Math.round((Date.now() - started) / 1000) }),
+    PING_INTERVAL_MS,
+  );
+
+  void (async () => {
+    try {
+      const recipe = await Promise.race([
+        runConversion(body, env, (phase) => void emit({ type: "phase", phase })),
+        rejectAfter(DEADLINE_MS),
+      ]);
+      await emit({ type: "result", recipe });
+    } catch (err) {
+      const { status, message } = errorPayload(err);
+      await emit({ type: "error", status, message });
+    } finally {
+      clearInterval(ping);
+      try {
+        await writer.close();
+      } catch {
+        /* client already gone */
+      }
+    }
+  })();
+
+  return new Response(readable, {
+    headers: { "content-type": "application/x-ndjson", "cache-control": "no-store" },
+  });
 };
+
+function validateRequest(body: ConvertRequest, env: Env): void {
+  switch (body.type) {
+    case "text":
+      return;
+    case "url":
+      assertPublicHttpUrl(body.payload, env.ALLOW_UNSAFE_TEST_HOSTS === "1");
+      return;
+    case "image":
+      if (!IMAGE_TYPES.has(body.mediaType ?? "")) {
+        throw new HttpError(400, "Unsupported image type; use JPEG, PNG, WebP, or GIF.");
+      }
+      if (base64Bytes(body.payload) > MAX_IMAGE_BYTES) {
+        throw new HttpError(413, "Image too large (max 5 MB).");
+      }
+      return;
+    case "pdf":
+      return;
+    default:
+      throw new HttpError(400, "type must be one of: url, text, image, pdf.");
+  }
+}
+
+async function runConversion(
+  body: ConvertRequest,
+  env: Env,
+  onPhase: PhaseEmitter,
+): Promise<RecipeTree> {
+  const content = await buildUserContent(body, env, onPhase);
+  return convertWithModel(env, content, onPhase);
+}
+
+function rejectAfter(ms: number): Promise<never> {
+  return new Promise((_, reject) =>
+    setTimeout(
+      () =>
+        reject(
+          new HttpError(
+            504,
+            "The conversion is taking unusually long. Try again, or paste the recipe text instead.",
+          ),
+        ),
+      ms,
+    ),
+  );
+}
+
+function errorPayload(err: unknown): { status: number; message: string } {
+  if (err instanceof HttpError) return { status: err.status, message: err.message };
+  if (err instanceof Anthropic.APIError) {
+    if (err.status === 401) {
+      return {
+        status: 500,
+        message:
+          "The server's Anthropic API key is missing or invalid — check the ANTHROPIC_API_KEY secret in Cloudflare Pages settings.",
+      };
+    }
+    if (err.status === 400 && /credit balance/i.test(err.message)) {
+      return {
+        status: 402,
+        message:
+          "Out of Anthropic API credits — conversions are paused until credits are added at console.anthropic.com. Nothing is charged automatically.",
+      };
+    }
+    if (err.status === 429) {
+      return { status: 429, message: "The converter is busy right now — try again in a minute." };
+    }
+    return {
+      status: 502,
+      message: "The conversion model is temporarily unavailable. Try again shortly.",
+    };
+  }
+  console.error("convert failed", err);
+  return { status: 500, message: "Unexpected server error." };
+}
 
 type ContentBlock = Anthropic.Messages.ContentBlockParam;
 
 const TASK =
   "Convert the following recipe into the JSON recipe tree format described in your instructions.";
 
-async function buildUserContent(body: ConvertRequest, env: Env): Promise<ContentBlock[]> {
+async function buildUserContent(
+  body: ConvertRequest,
+  env: Env,
+  onPhase: PhaseEmitter,
+): Promise<ContentBlock[]> {
   switch (body.type) {
     case "text":
       return [{ type: "text", text: `${TASK}\n\n${truncate(body.payload)}` }];
     case "url": {
-      const digest = await ingestUrl(body.payload, env);
+      onPhase("fetching");
+      const digest = await ingestUrl(body.payload, env, onPhase);
       return [{ type: "text", text: `${TASK}\n\n${digest}` }];
     }
-    case "image": {
-      const mediaType = body.mediaType ?? "";
-      if (!IMAGE_TYPES.has(mediaType)) {
-        throw new HttpError(400, "Unsupported image type; use JPEG, PNG, WebP, or GIF.");
-      }
-      if (base64Bytes(body.payload) > MAX_IMAGE_BYTES) {
-        throw new HttpError(413, "Image too large (max 5 MB).");
-      }
+    case "image":
       return [
         {
           type: "image",
           source: {
             type: "base64",
-            media_type: mediaType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
+            media_type: body.mediaType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
             data: body.payload,
           },
         },
@@ -132,7 +227,6 @@ async function buildUserContent(body: ConvertRequest, env: Env): Promise<Content
           text: `${TASK} The image may be a photographed cookbook page or a handwritten recipe card — read it carefully, including handwriting.`,
         },
       ];
-    }
     case "pdf":
       return [
         {
@@ -200,12 +294,13 @@ async function fetchHtml(target: string): Promise<string | null> {
   }
 }
 
-async function ingestUrl(raw: string, env: Env): Promise<string> {
+async function ingestUrl(raw: string, env: Env, onPhase: PhaseEmitter): Promise<string> {
   const archiveBase = env.ARCHIVE_BASE_URL || "https://web.archive.org";
   const url = assertPublicHttpUrl(raw, env.ALLOW_UNSAFE_TEST_HOSTS === "1");
   let fromArchive = false;
   let html = await fetchHtml(url.toString());
   if (html === null) {
+    onPhase("archive");
     html = await fetchHtml(`${archiveBase}/web/2id_/${url.toString()}`);
     fromArchive = html !== null;
   }
@@ -255,7 +350,11 @@ function base64Bytes(b64: string): number {
 
 // --- Model call -----------------------------------------------------------
 
-async function convertWithModel(env: Env, content: ContentBlock[]): Promise<RecipeTree> {
+async function convertWithModel(
+  env: Env,
+  content: ContentBlock[],
+  onPhase: PhaseEmitter,
+): Promise<RecipeTree> {
   const client = new Anthropic({
     apiKey: env.ANTHROPIC_API_KEY,
     baseURL: env.ANTHROPIC_BASE_URL || undefined,
@@ -263,9 +362,12 @@ async function convertWithModel(env: Env, content: ContentBlock[]): Promise<Reci
 
   const messages: Anthropic.Messages.MessageParam[] = [{ role: "user", content }];
   let lastValidationError = "";
+  onPhase("model");
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    const response = await client.messages.create({
+    // Streaming keeps the Anthropic leg alive during long thinking; we only
+    // need the final message.
+    const stream = client.messages.stream({
       model: MODEL,
       max_tokens: 16000,
       system: SYSTEM_PROMPT,
@@ -276,7 +378,8 @@ async function convertWithModel(env: Env, content: ContentBlock[]): Promise<Reci
         format: { type: "json_schema", schema: recipeJsonSchema },
       },
       messages,
-    } as Anthropic.Messages.MessageCreateParamsNonStreaming);
+    } as Anthropic.Messages.MessageStreamParams);
+    const response = await stream.finalMessage();
 
     if (response.stop_reason === "refusal") {
       throw new HttpError(422, "The model declined to process this input.");
@@ -295,6 +398,7 @@ async function convertWithModel(env: Env, content: ContentBlock[]): Promise<Reci
       parsed = JSON.parse(text);
     } catch {
       lastValidationError = "output was not valid JSON";
+      onPhase("revalidating");
       messages.push(
         { role: "assistant", content: text },
         { role: "user", content: "That was not valid JSON. Return only the corrected JSON object." },
@@ -308,6 +412,7 @@ async function convertWithModel(env: Env, content: ContentBlock[]): Promise<Reci
     lastValidationError = result.error.issues
       .map((i) => `${i.path.join(".")}: ${i.message}`)
       .join("; ");
+    onPhase("revalidating");
     messages.push(
       { role: "assistant", content: text },
       {
