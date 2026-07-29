@@ -143,8 +143,9 @@ export const recipeJsonSchema = {
 // Model configuration and system prompt (frozen constant -> prompt-cacheable)
 // ---------------------------------------------------------------------------
 
-// claude-sonnet-5 is the cheaper alternative (~3x less per conversion).
-export const MODEL = "claude-opus-5";
+// claude-opus-5 is the higher-capability alternative (~2.5x the price per
+// conversion); Sonnet handles recipe extraction well at a fraction of the cost.
+export const MODEL = "claude-sonnet-5";
 
 const EXAMPLE: RecipeTree = {
   title: "Simple Brownies",

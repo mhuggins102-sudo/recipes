@@ -42,9 +42,10 @@ Open http://localhost:5173. Run tests with `npm test`, typecheck with
 ## Cost & model
 
 The model is a single constant in `shared/schema.ts` (`MODEL`). Default is
-`claude-opus-5` (~5–6¢ per conversion); switch to `claude-sonnet-5` for ~1–2¢
-per conversion. Everything else — URL parsing, rendering, editing — costs
-nothing.
+`claude-sonnet-5` (~1–3¢ per conversion); switch to `claude-opus-5` (~2.5x the
+price) if you ever hit a recipe Sonnet structures poorly. Everything else —
+URL parsing, rendering, editing — costs nothing, and conversions that fail
+before reaching the model (bad URL, blocked site) aren't billed.
 
 ## Layout of the code
 

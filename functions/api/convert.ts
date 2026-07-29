@@ -224,6 +224,9 @@ async function convertWithModel(env: Env, content: ContentBlock[]): Promise<Reci
       max_tokens: 16000,
       system: SYSTEM_PROMPT,
       output_config: {
+        // Medium effort trims reasoning-token spend; extraction doesn't need
+        // deep thinking, and reasoning tokens bill as output.
+        effort: "medium",
         format: { type: "json_schema", schema: recipeJsonSchema },
       },
       messages,
