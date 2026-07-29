@@ -49,25 +49,26 @@ describe("transformNumbers", () => {
 });
 
 describe("preferUnits", () => {
-  it("puts metric first when preferred", () => {
-    expect(preferUnits("1 cup (200 g)", "metric")).toBe("200 g (1 cup)");
-    expect(preferUnits("2 lb (900 g)", "metric")).toBe("900 g (2 lb)");
+  it("shows only the metric side when metric is preferred", () => {
+    expect(preferUnits("1 cup (200 g)", "metric")).toBe("200 g");
+    expect(preferUnits("2 lb (900 g)", "metric")).toBe("900 g");
+    expect(preferUnits("2 large (100 g)", "metric")).toBe("100 g");
   });
 
-  it("puts imperial first when preferred", () => {
-    expect(preferUnits("200 g (1 cup)", "imperial")).toBe("1 cup (200 g)");
+  it("shows only the imperial side when imperial is preferred", () => {
+    expect(preferUnits("200 g (1 cup)", "imperial")).toBe("1 cup");
+    expect(preferUnits("1 cup (200 g)", "imperial")).toBe("1 cup");
   });
 
-  it("leaves matching or unclassifiable strings alone", () => {
-    expect(preferUnits("1 cup (200 g)", "imperial")).toBe("1 cup (200 g)");
-    expect(preferUnits("2 large (100 g)", "imperial")).toBe("2 large (100 g)");
+  it("keeps a countable primary when only the opposite system exists", () => {
+    expect(preferUnits("2 large (100 g)", "imperial")).toBe("2 large");
+  });
+
+  it("leaves single-sided or unclassifiable strings alone", () => {
     expect(preferUnits("1 tsp", "metric")).toBe("1 tsp");
     expect(preferUnits("a pinch", "metric")).toBe("a pinch");
+    expect(preferUnits("1 cup (a splash)", "metric")).toBe("1 cup (a splash)");
     expect(preferUnits("", "metric")).toBe("");
-  });
-
-  it("moves countable-with-metric-equivalent to grams under metric", () => {
-    expect(preferUnits("2 large (100 g)", "metric")).toBe("100 g (2 large)");
   });
 });
 
@@ -75,7 +76,7 @@ describe("transformQuantity + unscaleQuantity", () => {
   it("composes units, scale, and style", () => {
     expect(
       transformQuantity("3/4 cup (150 g)", { units: "metric", numbers: "decimals", scale: 2 }),
-    ).toBe("300 g (1.5 cup)");
+    ).toBe("300 g");
   });
 
   it("unscale inverts the multiplier for edit write-back", () => {
@@ -121,8 +122,8 @@ describe("applyView", () => {
     expect(recipe.tree.children[0]).toMatchObject({ quantity: "1 cup (200 g)" });
   });
 
-  it("reorders units across the tree", () => {
+  it("applies the unit preference across the tree", () => {
     const out = applyView(recipe, { ...DEFAULT_VIEW, units: "metric" });
-    expect(out.tree.children[0]).toMatchObject({ quantity: "200 g (1 cup)" });
+    expect(out.tree.children[0]).toMatchObject({ quantity: "200 g" });
   });
 });

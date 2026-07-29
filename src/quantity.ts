@@ -114,18 +114,20 @@ function system(side: string): "metric" | "imperial" | "unknown" {
 const DUAL_RE = /^(.*?)\s*\(([^()]+)\)$/;
 
 /**
- * Put the preferred measurement system first in "primary (other)" pairs.
- * Strings without a trailing parenthetical (or where neither side matches
- * the preference) pass through unchanged.
+ * Show only the preferred measurement system in "primary (other)" pairs:
+ * "1 cup (200 g)" under metric displays as just "200 g". A countable primary
+ * ("2 large") survives when the parenthetical is the opposite system. Strings
+ * that aren't a dual pair, or where neither side is classifiable, pass
+ * through unchanged — this is display-only, the stored value keeps both.
  */
 export function preferUnits(text: string, units: ViewOptions["units"]): string {
   if (units === "original") return text;
   const dual = DUAL_RE.exec(text);
   if (!dual) return text;
   const [, primary, paren] = dual;
-  if (system(primary) !== units && system(paren) === units) {
-    return `${paren} (${primary})`;
-  }
+  if (system(paren) === units) return paren;
+  if (system(primary) === units) return primary;
+  if (system(primary) === "unknown" && system(paren) !== "unknown") return primary;
   return text;
 }
 
