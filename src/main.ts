@@ -45,7 +45,10 @@ const saveImgBtn = button("ghost", "Save image");
 const savePdfBtn = button("ghost", "Save PDF");
 const shareBtn = button("ghost", "Share");
 const printBtn = button("ghost", "Print");
-const resetBtn = button("ghost", "Start over");
+const resetBtn = button("ghost", "");
+// "Start over" on wide screens, "Back" on phones (so all five fit one line);
+// the compact media query in main.css swaps the labels.
+resetBtn.innerHTML = '<span class="label-wide">Start over</span><span class="label-narrow">Back</span>';
 toolbar.append(saveImgBtn, savePdfBtn, shareBtn, printBtn, resetBtn);
 
 // Edit JSON lives below the table — it's a restructuring tool, not a daily action.
@@ -84,6 +87,9 @@ app.append(header, errorBox, panel.el, resultSection, recentsSection);
 let current: RecipeTree | null = null;
 let currentId: string | null = null;
 let persistTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Same breakpoint as the compact stylesheet in main.css (portrait phones). */
+const compactScreen = window.matchMedia("screen and (max-width: 600px)");
 
 function button(cls: string, label: string): HTMLButtonElement {
   const b = document.createElement("button");
@@ -142,6 +148,14 @@ function show(recipe: RecipeTree) {
   jsonError.textContent = "";
   jsonBtn.textContent = "Edit JSON";
   rerenderTable();
+  if (compactScreen.matches) {
+    // Small screens: park the toolbar at the top so the table gets the whole
+    // viewport; Back scrolls home to the input panel.
+    window.scrollTo({
+      top: toolbar.getBoundingClientRect().top + window.scrollY - 8,
+      behavior: "smooth",
+    });
+  }
 }
 
 function rerenderTable() {
@@ -252,7 +266,7 @@ resetBtn.addEventListener("click", () => {
   resultSection.style.display = "none";
   clearError();
   renderRecents();
-  window.scrollTo({ top: 0 });
+  window.scrollTo({ top: 0, behavior: compactScreen.matches ? "smooth" : "auto" });
 });
 
 // --- Recents / demo --------------------------------------------------------
