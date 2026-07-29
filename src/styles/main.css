@@ -229,6 +229,18 @@ table.recipe-table {
   background: #fbfbef;
 }
 
+/* Trailing combine-nothing steps, laid flat under the grid. */
+.recipe-table td.finish {
+  text-align: center;
+  background: #fbfff2;
+}
+
+.recipe-table td.finish::before {
+  content: "then ";
+  color: var(--muted);
+  font-style: italic;
+}
+
 [contenteditable]:focus {
   outline: 2px solid var(--accent);
   outline-offset: 1px;

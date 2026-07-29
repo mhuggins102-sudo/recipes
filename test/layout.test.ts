@@ -29,7 +29,7 @@ describe("layout", () => {
     ]);
   });
 
-  it("pure chain (melt -> mix -> bake) stacks columns", () => {
+  it("pure chain (melt -> mix -> bake) hoists the trailing steps to finishing rows", () => {
     const r = recipe({
       kind: "step",
       label: "bake",
@@ -42,14 +42,80 @@ describe("layout", () => {
       ],
     });
     const g = layout(r);
-    expect(g.totalCols).toBe(4);
+    // Grid keeps only melt(butter); mix and bake become bottom rows.
+    expect(g.totalCols).toBe(2);
     expect(g.totalRows).toBe(1);
     expect(tuples(r)).toEqual([
       ["t.0.0.0", 0, 0, 1, 1],
       ["t.0.0", 0, 1, 1, 1],
-      ["t.0", 0, 2, 1, 1],
-      ["t", 0, 3, 1, 1],
     ]);
+    expect(g.finishing.map((f) => [f.path, f.node.label])).toEqual([
+      ["t.0", "mix"],
+      ["t", "bake"],
+    ]);
+  });
+
+  it("hoists the user-visible case: mix -> roll into balls -> chill -> bake", () => {
+    const r = recipe({
+      kind: "step",
+      label: "bake 350°F 12 min",
+      children: [
+        {
+          kind: "step",
+          label: "chill 1 hr",
+          children: [
+            {
+              kind: "step",
+              label: "roll into balls",
+              children: [
+                { kind: "step", label: "mix", children: [ing("flour"), ing("sugar")] },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const g = layout(r);
+    expect(g.finishing.map((f) => f.node.label)).toEqual([
+      "roll into balls",
+      "chill 1 hr",
+      "bake 350°F 12 min",
+    ]);
+    // Grid root is "mix" with its original path, so inline edits still land.
+    expect(tuples(r)).toEqual([
+      ["t.0.0.0.0", 0, 0, 1, 1],
+      ["t.0.0.0", 0, 1, 1, 2],
+      ["t.0.0.0.1", 1, 0, 1, 1],
+    ]);
+  });
+
+  it("keeps a lone final step vertical (chain of 1)", () => {
+    const r = recipe({
+      kind: "step",
+      label: "bake",
+      children: [{ kind: "step", label: "mix", children: [ing("a"), ing("b")] }],
+    });
+    const g = layout(r);
+    expect(g.finishing).toEqual([]);
+    expect(g.totalCols).toBe(3);
+  });
+
+  it("does not hoist single-child chains inside branches", () => {
+    const r = recipe({
+      kind: "step",
+      label: "combine",
+      children: [
+        {
+          kind: "step",
+          label: "brown",
+          children: [{ kind: "step", label: "melt", children: [ing("butter")] }],
+        },
+        ing("sugar"),
+      ],
+    });
+    const g = layout(r);
+    expect(g.finishing).toEqual([]);
+    expect(g.totalCols).toBe(4);
   });
 
   it("balanced 2x2 tree", () => {

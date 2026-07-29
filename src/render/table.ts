@@ -76,6 +76,18 @@ export function renderTable(recipe: RecipeTree): HTMLTableElement {
     tbody.appendChild(tr);
   }
 
+  for (const finish of grid.finishing) {
+    const tr = el("tr", "finish-row");
+    const td = el("td", "finish");
+    td.colSpan = grid.totalCols;
+    td.dataset.path = finish.path;
+    const label = el("span", "label", finish.node.label);
+    label.dataset.field = "label";
+    td.appendChild(label);
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  }
+
   recipe.notes?.forEach((note, i) => {
     const tr = el("tr", "notes-row");
     const td = el("td", "notes", note);

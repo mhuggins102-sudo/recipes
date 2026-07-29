@@ -16,11 +16,26 @@ export interface Cell {
   rowspan: number;
 }
 
+/** A trailing single-child step rendered as a full-width row under the grid. */
+export interface FinishingStep {
+  node: StepNode;
+  /** Path into the original tree, e.g. "t" or "t.0". */
+  path: string;
+}
+
 export interface Layout {
   totalCols: number;
   totalRows: number;
   /** Indexed by row; each row's cells sorted by col. Every cell appears once, at the row of its first leaf. */
   rows: Cell[][];
+  /**
+   * Trailing steps that combine nothing (a chain of single-child steps ending
+   * at the root), in execution order. Rendered as horizontal rows under the
+   * grid instead of a stack of skinny full-height columns. Only populated
+   * when the chain is 2+ long — a lone full-height final step is the
+   * format's signature look and stays vertical.
+   */
+  finishing: FinishingStep[];
 }
 
 function height(node: RecipeNode): number {
@@ -34,7 +49,21 @@ function leafCount(node: RecipeNode): number {
 }
 
 export function layout(recipe: RecipeTree): Layout {
-  const root: StepNode = recipe.tree;
+  let root: StepNode = recipe.tree;
+  let rootPath = "t";
+  const chain: FinishingStep[] = [];
+  while (root.children.length === 1 && root.children[0].kind === "step") {
+    chain.push({ node: root, path: rootPath });
+    root = root.children[0];
+    rootPath += ".0";
+  }
+  // Collected root-first (last action first); rows read in execution order.
+  const finishing = chain.length >= 2 ? chain.reverse() : [];
+  if (finishing.length === 0) {
+    root = recipe.tree;
+    rootPath = "t";
+  }
+
   const totalCols = height(root) + 1;
   const totalRows = leafCount(root);
   const rows: Cell[][] = Array.from({ length: totalRows }, () => []);
@@ -58,9 +87,9 @@ export function layout(recipe: RecipeTree): Layout {
     }
   }
 
-  place(root, 0, totalCols, "t");
+  place(root, 0, totalCols, rootPath);
   for (const row of rows) row.sort((a, b) => a.col - b.col);
-  return { totalCols, totalRows, rows };
+  return { totalCols, totalRows, rows, finishing };
 }
 
 /** Resolve a data-path (e.g. "t.0.2") back to its node in the tree. */
