@@ -15,7 +15,9 @@ export interface ViewOptions {
   labels: "full" | "brief";
 }
 
-export const DEFAULT_VIEW: ViewOptions = {
+/** The identity transform — source text untouched. (The UI's starting view
+    for new recipes is INITIAL_VIEW in ui/viewBar.ts.) */
+export const IDENTITY_VIEW: ViewOptions = {
   units: "original",
   numbers: "original",
   scale: 1,

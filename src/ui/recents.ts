@@ -1,4 +1,5 @@
 import type { RecipeTree } from "../../shared/schema";
+import type { ViewOptions } from "../quantity";
 
 export interface RecentEntry {
   id: string;
@@ -6,6 +7,8 @@ export interface RecentEntry {
   ts: number;
   /** Favorited entries pin to the top of the list and are never auto-evicted. */
   fav?: boolean;
+  /** View options the user chose for this recipe; absent = the defaults. */
+  view?: ViewOptions;
   recipe: RecipeTree;
 }
 
@@ -75,6 +78,19 @@ export function updateRecent(id: string, recipe: RecipeTree): void {
 
 export function getRecent(id: string): RecipeTree | undefined {
   return load().find((e) => e.id === id)?.recipe;
+}
+
+export function getRecentView(id: string): ViewOptions | undefined {
+  return load().find((e) => e.id === id)?.view;
+}
+
+/** Remember the view options (units/numbers/steps/scale) chosen for one recipe. */
+export function updateRecentView(id: string, view: ViewOptions): void {
+  const entries = load();
+  const entry = entries.find((e) => e.id === id);
+  if (!entry) return;
+  entry.view = view;
+  store(entries);
 }
 
 export function toggleFavorite(id: string): void {

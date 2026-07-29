@@ -5,21 +5,23 @@ import { convert, type ConvertRequest } from "./api";
 import { downloadFile, exportTableImage, shareImage } from "./export/image";
 import { exportTablePdf } from "./export/pdf";
 import { setupPrintFit } from "./print";
-import { applyView, unscaleQuantity } from "./quantity";
+import { applyView, unscaleQuantity, type ViewOptions } from "./quantity";
 import { renderTable } from "./render/table";
 import { SAMPLE_RECIPE } from "./sample";
 import { enableInlineEditing } from "./ui/editor";
 import { createInputPanel } from "./ui/inputPanel";
 import {
   getRecent,
+  getRecentView,
   listRecents,
   removeRecent,
   saveRecent,
   toggleFavorite,
   touchRecent,
   updateRecent,
+  updateRecentView,
 } from "./ui/recents";
-import { createViewBar } from "./ui/viewBar";
+import { createViewBar, INITIAL_VIEW } from "./ui/viewBar";
 
 const app = document.getElementById("app")!;
 
@@ -57,7 +59,11 @@ belowToolbar.className = "toolbar";
 const jsonBtn = button("ghost", "Edit JSON");
 belowToolbar.append(jsonBtn);
 
-const viewBar = createViewBar(() => rerenderTable());
+const viewBar = createViewBar(() => {
+  rerenderTable();
+  // The changed settings stick to this recipe (not to other recipes).
+  if (currentId) updateRecentView(currentId, { ...viewBar.view });
+});
 
 const tableWrap = document.createElement("div");
 tableWrap.className = "table-wrap";
@@ -129,6 +135,8 @@ async function startConversion(req: ConvertRequest) {
       showStatus();
     });
     currentId = saveRecent(recipe);
+    // The upload did its job — reset that tab for the next photo.
+    if (req.type === "image" || req.type === "pdf") panel.clearUpload();
     show(recipe);
   } catch (err) {
     showError(err instanceof Error ? err.message : String(err));
@@ -139,9 +147,9 @@ async function startConversion(req: ConvertRequest) {
   }
 }
 
-function show(recipe: RecipeTree) {
+function show(recipe: RecipeTree, view?: ViewOptions) {
   current = recipe;
-  viewBar.resetScale();
+  viewBar.setView(view ?? { ...INITIAL_VIEW });
   resultSection.style.display = "";
   jsonEditor.style.display = "none";
   jsonApply.style.display = "none";
@@ -185,11 +193,20 @@ jsonBtn.addEventListener("click", () => {
     jsonEditor.style.display = "";
     jsonApply.style.display = "";
     jsonBtn.textContent = "Hide JSON";
+    if (compactScreen.matches) {
+      // Park the JSON tools at the top so the editor fills the screen.
+      window.scrollTo({
+        top: belowToolbar.getBoundingClientRect().top + window.scrollY - 8,
+        behavior: "smooth",
+      });
+    }
   } else {
     jsonEditor.style.display = "none";
     jsonApply.style.display = "none";
     jsonBtn.textContent = "Edit JSON";
     jsonError.textContent = "";
+    // Hiding the editor goes home to the input panel, like Back does.
+    if (compactScreen.matches) window.scrollTo({ top: 0, behavior: "smooth" });
   }
 });
 
@@ -320,7 +337,7 @@ function renderRecents() {
       if (recipe) {
         currentId = entry.id;
         touchRecent(entry.id);
-        show(recipe);
+        show(recipe, getRecentView(entry.id));
         renderRecents();
       }
     });

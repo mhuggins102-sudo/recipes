@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RecipeTree } from "../shared/schema";
 import {
-  DEFAULT_VIEW,
+  IDENTITY_VIEW,
   applyView,
   preferUnits,
   transformNumbers,
@@ -85,10 +85,10 @@ describe("transformQuantity + unscaleQuantity", () => {
   });
 
   it("unscale inverts the multiplier for edit write-back", () => {
-    const view = { ...DEFAULT_VIEW, scale: 2 };
+    const view = { ...IDENTITY_VIEW, scale: 2 };
     expect(unscaleQuantity("4 lb (1800 g)", view)).toBe("2 lb (900 g)");
-    expect(unscaleQuantity("1 cup", { ...DEFAULT_VIEW, scale: 0.5 })).toBe("2 cup");
-    expect(unscaleQuantity("1 cup", DEFAULT_VIEW)).toBe("1 cup");
+    expect(unscaleQuantity("1 cup", { ...IDENTITY_VIEW, scale: 0.5 })).toBe("2 cup");
+    expect(unscaleQuantity("1 cup", IDENTITY_VIEW)).toBe("1 cup");
   });
 });
 
@@ -112,11 +112,11 @@ describe("applyView", () => {
   };
 
   it("returns the same object untouched for the default view", () => {
-    expect(applyView(recipe, DEFAULT_VIEW)).toBe(recipe);
+    expect(applyView(recipe, IDENTITY_VIEW)).toBe(recipe);
   });
 
   it("scales quantities and servings but not labels or setup", () => {
-    const out = applyView(recipe, { ...DEFAULT_VIEW, scale: 2 });
+    const out = applyView(recipe, { ...IDENTITY_VIEW, scale: 2 });
     expect(out.servings).toBe("makes 32");
     const [sugar, melt] = out.tree.children;
     expect(sugar).toMatchObject({ quantity: "2 cup (400 g)" });
@@ -128,7 +128,7 @@ describe("applyView", () => {
   });
 
   it("applies the unit preference across the tree", () => {
-    const out = applyView(recipe, { ...DEFAULT_VIEW, units: "metric" });
+    const out = applyView(recipe, { ...IDENTITY_VIEW, units: "metric" });
     expect(out.tree.children[0]).toMatchObject({ quantity: "200 g" });
   });
 });
