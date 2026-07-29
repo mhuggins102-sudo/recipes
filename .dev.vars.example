@@ -2,3 +2,9 @@
 # In production, set ANTHROPIC_API_KEY as an encrypted secret in the
 # Cloudflare Pages dashboard (Settings -> Environment variables).
 ANTHROPIC_API_KEY=sk-ant-...
+
+# Optional, local testing only — point the model / Internet Archive calls at
+# mock servers, and let the URL tab target localhost. Never set in production.
+#ANTHROPIC_BASE_URL=http://localhost:9317
+#ARCHIVE_BASE_URL=http://localhost:9317
+#ALLOW_UNSAFE_TEST_HOSTS=1

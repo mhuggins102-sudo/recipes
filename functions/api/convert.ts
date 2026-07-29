@@ -12,6 +12,13 @@ interface Env {
   ANTHROPIC_API_KEY?: string;
   /** Optional override, e.g. a mock server in tests. */
   ANTHROPIC_BASE_URL?: string;
+  /** Optional override for the Internet Archive host, e.g. a mock in tests. */
+  ARCHIVE_BASE_URL?: string;
+  /**
+   * Local testing only (.dev.vars): skip the private-host (SSRF) guard so the
+   * URL path can be exercised against localhost mocks. Never set in production.
+   */
+  ALLOW_UNSAFE_TEST_HOSTS?: string;
 }
 
 interface ConvertRequest {
@@ -59,7 +66,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   try {
-    const content = await buildUserContent(body);
+    const content = await buildUserContent(body, env);
     const recipe = await convertWithModel(env, content);
     return Response.json({ recipe });
   } catch (err) {
@@ -95,12 +102,12 @@ type ContentBlock = Anthropic.Messages.ContentBlockParam;
 const TASK =
   "Convert the following recipe into the JSON recipe tree format described in your instructions.";
 
-async function buildUserContent(body: ConvertRequest): Promise<ContentBlock[]> {
+async function buildUserContent(body: ConvertRequest, env: Env): Promise<ContentBlock[]> {
   switch (body.type) {
     case "text":
       return [{ type: "text", text: `${TASK}\n\n${truncate(body.payload)}` }];
     case "url": {
-      const digest = await ingestUrl(body.payload);
+      const digest = await ingestUrl(body.payload, env);
       return [{ type: "text", text: `${TASK}\n\n${digest}` }];
     }
     case "image": {
@@ -144,7 +151,7 @@ async function buildUserContent(body: ConvertRequest): Promise<ContentBlock[]> {
 const PRIVATE_HOST_RE =
   /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.|\[::1\]|\[fc|\[fd|\[fe80)|^172\.(1[6-9]|2\d|3[01])\./i;
 
-function assertPublicHttpUrl(raw: string): URL {
+function assertPublicHttpUrl(raw: string, allowUnsafeHosts: boolean): URL {
   let url: URL;
   try {
     url = new URL(raw.trim());
@@ -155,37 +162,64 @@ function assertPublicHttpUrl(raw: string): URL {
     throw new HttpError(400, "Only http(s) URLs are supported.");
   }
   const host = url.hostname.toLowerCase();
-  if (PRIVATE_HOST_RE.test(host) || host.endsWith(".local") || host.endsWith(".internal") || !host.includes(".")) {
+  const privateHost =
+    PRIVATE_HOST_RE.test(host) ||
+    host.endsWith(".local") ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".internal") ||
+    !host.includes(".");
+  if (privateHost && !allowUnsafeHosts) {
     throw new HttpError(400, "That host isn't reachable from here.");
   }
   return url;
 }
 
-async function ingestUrl(raw: string): Promise<string> {
-  const url = assertPublicHttpUrl(raw);
-  let resp: Response;
+// Recipe sites often 403 anything that doesn't look like a real browser, so
+// the fetch presents ordinary desktop-Chrome headers. Sites with data-center
+// IP blocking will refuse regardless; for those we fall back to the page's
+// latest Internet Archive snapshot (the `id_` modifier returns the original
+// document without the Wayback toolbar).
+const BROWSER_HEADERS = {
+  "user-agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+  accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "accept-language": "en-US,en;q=0.9",
+};
+
+async function fetchHtml(target: string): Promise<string | null> {
   try {
-    resp = await fetch(url.toString(), {
+    const resp = await fetch(target, {
       redirect: "follow",
       signal: AbortSignal.timeout(10_000),
-      headers: {
-        "user-agent":
-          "Mozilla/5.0 (compatible; RecipeTabulator/0.1; +https://github.com/mhuggins102-sudo/recipes)",
-        accept: "text/html,application/xhtml+xml",
-      },
+      headers: BROWSER_HEADERS,
     });
+    if (!resp.ok) return null;
+    return await readCapped(resp, MAX_PAGE_BYTES);
   } catch {
-    throw new HttpError(502, "Couldn't fetch that URL — paste the recipe text instead.");
+    return null;
   }
-  if (!resp.ok) {
+}
+
+async function ingestUrl(raw: string, env: Env): Promise<string> {
+  const archiveBase = env.ARCHIVE_BASE_URL || "https://web.archive.org";
+  const url = assertPublicHttpUrl(raw, env.ALLOW_UNSAFE_TEST_HOSTS === "1");
+  let fromArchive = false;
+  let html = await fetchHtml(url.toString());
+  if (html === null) {
+    html = await fetchHtml(`${archiveBase}/web/2id_/${url.toString()}`);
+    fromArchive = html !== null;
+  }
+  if (html === null) {
     throw new HttpError(
       502,
-      `That site answered with ${resp.status} — it may block robots. Paste the recipe text instead.`,
+      "That site blocks automated readers and no archived copy was found. Open the page in your browser, select all (Ctrl/Cmd-A), copy, and use the Paste text tab — or screenshot the recipe and use Photo / PDF.",
     );
   }
-  const html = await readCapped(resp, MAX_PAGE_BYTES);
+  const archiveNote = fromArchive
+    ? "(Content retrieved from an archived copy of the page — ignore any archive banners or injected markup.)\n"
+    : "";
   const jsonLd = extractJsonLdRecipe(html);
-  if (jsonLd) return jsonLd;
+  if (jsonLd) return archiveNote + jsonLd;
   const text = stripHtmlToText(html);
   if (text.length < 100) {
     throw new HttpError(
@@ -193,7 +227,7 @@ async function ingestUrl(raw: string): Promise<string> {
       "Couldn't find recipe content on that page — paste the recipe text instead.",
     );
   }
-  return `The following is unstructured text extracted from a web page; find the recipe in it.\n\n${text}`;
+  return `${archiveNote}The following is unstructured text extracted from a web page; find the recipe in it.\n\n${text}`;
 }
 
 async function readCapped(resp: Response, maxBytes: number): Promise<string> {
