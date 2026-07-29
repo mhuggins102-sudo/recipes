@@ -409,6 +409,13 @@ button.linkish {
   box-sizing: border-box;
 }
 
+.export-stage .brand {
+  color: var(--accent);
+  font-weight: bold;
+  font-size: 1.1rem;
+  margin-bottom: 10px;
+}
+
 /* ---- Compact layout for narrow (portrait-phone) screens ----
    `screen and` keeps these out of print; the export stage is excluded by
    scoping table rules to .table-wrap, so saved images/PDFs stay full-size. */

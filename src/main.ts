@@ -148,8 +148,8 @@ async function startConversion(req: ConvertRequest) {
       showStatus();
     });
     currentId = saveRecent(recipe);
-    // The upload did its job — reset that tab for the next photo.
-    if (req.type === "image" || req.type === "pdf") panel.clearUpload();
+    // The input did its job — reset it for the next recipe.
+    panel.clearSubmitted(req.type);
     show(recipe);
   } catch (err) {
     showError(err instanceof Error ? err.message : String(err));

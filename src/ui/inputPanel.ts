@@ -4,8 +4,8 @@ import { fileToRequest } from "./image";
 export interface InputPanel {
   el: HTMLElement;
   setBusy(busy: boolean, statusText?: string): void;
-  /** Reset the Photo/PDF tab after its file has produced a table. */
-  clearUpload(): void;
+  /** Reset whichever input produced a table (URL, pasted text, or upload). */
+  clearSubmitted(type: ConvertRequest["type"]): void;
 }
 
 type TabId = "url" | "paste" | "upload";
@@ -168,7 +168,11 @@ export function createInputPanel(
 
   return {
     el: panel,
-    clearUpload,
+    clearSubmitted(type) {
+      if (type === "url") urlInput.value = "";
+      else if (type === "text") textarea.value = "";
+      else clearUpload();
+    },
     setBusy(busy, statusText) {
       go.disabled = busy;
       status.innerHTML = "";
