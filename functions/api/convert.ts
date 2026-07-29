@@ -65,6 +65,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   } catch (err) {
     if (err instanceof HttpError) return jsonError(err.status, err.message);
     if (err instanceof Anthropic.APIError) {
+      if (err.status === 401) {
+        return jsonError(
+          500,
+          "The server's Anthropic API key is missing or invalid — check the ANTHROPIC_API_KEY secret in Cloudflare Pages settings.",
+        );
+      }
+      if (err.status === 400 && /credit balance/i.test(err.message)) {
+        return jsonError(
+          402,
+          "Out of Anthropic API credits — conversions are paused until credits are added at console.anthropic.com. Nothing is charged automatically.",
+        );
+      }
       if (err.status === 429) {
         const retryAfter = err.headers?.get?.("retry-after") ?? undefined;
         return jsonError(429, "The converter is busy right now — try again in a minute.", {
