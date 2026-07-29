@@ -32,8 +32,12 @@ export interface StagedTable {
 export function stageTable(recipe: RecipeTree, labelMode: "full" | "brief"): StagedTable {
   const stage = document.createElement("div");
   stage.className = "export-stage";
+  // Same site name + icon that tops the printed page.
+  const brand = document.createElement("div");
+  brand.className = "brand";
+  brand.textContent = "📐 Recipe Tabulator";
   const table = renderTable(recipe, labelMode);
-  stage.appendChild(table);
+  stage.append(brand, table);
   document.body.appendChild(stage);
 
   // Probe layout-only (no rasterizing) for the most portrait-friendly width.
