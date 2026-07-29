@@ -78,31 +78,32 @@ function clearError() {
   errorBox.style.display = "none";
 }
 
-const PHASES = ["Reading recipe…", "Building the tree…", "Setting the table…"];
+const PHASE_TEXT: Record<string, string> = {
+  fetching: "Fetching the page…",
+  archive: "Site blocks robots — trying the Internet Archive…",
+  model: "Reading the recipe and building the tree…",
+  revalidating: "Double-checking the structure…",
+};
 
 async function startConversion(req: ConvertRequest) {
   clearError();
-  let phase = 0;
-  panel.setBusy(true, req.type === "url" ? "Fetching page…" : PHASES[0]);
-  const phaseTimer = setInterval(() => {
-    phase = Math.min(phase + 1, PHASES.length - 1);
-    panel.setBusy(true, PHASES[phase]);
-  }, 6000);
-  const abort = AbortSignal.timeout(90_000);
+  const started = Date.now();
+  let phaseText = req.type === "url" ? PHASE_TEXT.fetching : PHASE_TEXT.model;
+  const showStatus = () =>
+    panel.setBusy(true, `${phaseText} ${Math.round((Date.now() - started) / 1000)}s`);
+  showStatus();
+  const ticker = setInterval(showStatus, 1000);
   try {
-    const recipe = await convert(req, abort);
+    const recipe = await convert(req, (phase) => {
+      phaseText = PHASE_TEXT[phase] ?? phaseText;
+      showStatus();
+    });
     currentId = saveRecent(recipe);
     show(recipe);
   } catch (err) {
-    showError(
-      abort.aborted
-        ? "Timed out waiting for the conversion — try again."
-        : err instanceof Error
-          ? err.message
-          : String(err),
-    );
+    showError(err instanceof Error ? err.message : String(err));
   } finally {
-    clearInterval(phaseTimer);
+    clearInterval(ticker);
     panel.setBusy(false);
     renderRecents();
   }
