@@ -511,6 +511,27 @@ button.linkish {
   .recents h2 {
     font-size: 0.95rem;
   }
+
+  /* One line per recent: a long title truncates with an ellipsis instead of
+     wrapping, so the star, date, and delete button stay on the same line. */
+  .recents li {
+    display: flex;
+    align-items: baseline;
+  }
+
+  .recents li a {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .recents li .star,
+  .recents li .when,
+  .recents li .del {
+    flex: none;
+  }
 }
 
 .spinner {

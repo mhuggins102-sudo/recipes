@@ -1,49 +1,30 @@
-import { DEFAULT_VIEW, type ViewOptions } from "../quantity";
+import type { ViewOptions } from "../quantity";
 
-// Segmented controls for the display-time view options. Units and number
-// style are user preferences (persisted); scale is per-recipe intent and
-// resets to 1× whenever a different recipe is shown.
+// Segmented controls for the display-time view options. Every recipe starts
+// at INITIAL_VIEW; when the user changes a control, the caller stores the
+// choice on that recipe's recents entry, so each recipe keeps its own view.
 
-const KEY = "recipe-tabulator:view";
+/** What every recipe shows until its own settings are changed. */
+export const INITIAL_VIEW: ViewOptions = {
+  units: "imperial",
+  numbers: "fractions",
+  scale: 1,
+  labels: "brief",
+};
 
 export interface ViewBar {
   el: HTMLElement;
   view: ViewOptions;
-  /** Reset the multiplier to 1× without firing onChange (new recipe shown). */
-  resetScale(): void;
-}
-
-interface Prefs {
-  units: ViewOptions["units"];
-  numbers: ViewOptions["numbers"];
-  labels: ViewOptions["labels"];
-}
-
-function loadPrefs(): Partial<Prefs> {
-  try {
-    const raw = localStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as Partial<Prefs>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function storePrefs(prefs: Prefs): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(prefs));
-  } catch {
-    /* private mode etc. — preferences just don't stick */
-  }
+  /** Replace all four controls (recipe shown with its saved or default view);
+      does not fire onChange. */
+  setView(v: ViewOptions): void;
 }
 
 export function createViewBar(onChange: () => void): ViewBar {
-  const view: ViewOptions = { ...DEFAULT_VIEW, ...loadPrefs(), scale: 1 };
+  const view: ViewOptions = { ...INITIAL_VIEW };
 
   const el = document.createElement("div");
   el.className = "view-bar";
-
-  const persist = () =>
-    storePrefs({ units: view.units, numbers: view.numbers, labels: view.labels });
 
   const units = segmented<ViewOptions["units"]>(
     "Units",
@@ -55,7 +36,6 @@ export function createViewBar(onChange: () => void): ViewBar {
     view.units,
     (v) => {
       view.units = v;
-      persist();
       onChange();
     },
   );
@@ -70,7 +50,6 @@ export function createViewBar(onChange: () => void): ViewBar {
     view.numbers,
     (v) => {
       view.numbers = v;
-      persist();
       onChange();
     },
   );
@@ -84,7 +63,6 @@ export function createViewBar(onChange: () => void): ViewBar {
     view.labels,
     (v) => {
       view.labels = v;
-      persist();
       onChange();
     },
   );
@@ -98,7 +76,7 @@ export function createViewBar(onChange: () => void): ViewBar {
       ["2", "2×"],
       ["3", "3×"],
     ],
-    "1",
+    String(view.scale),
     (v) => {
       view.scale = Number(v);
       onChange();
@@ -110,9 +88,12 @@ export function createViewBar(onChange: () => void): ViewBar {
   return {
     el,
     view,
-    resetScale() {
-      view.scale = 1;
-      scale.set("1");
+    setView(v) {
+      Object.assign(view, v);
+      units.set(view.units);
+      numbers.set(view.numbers);
+      labels.set(view.labels);
+      scale.set(String(view.scale));
     },
   };
 }

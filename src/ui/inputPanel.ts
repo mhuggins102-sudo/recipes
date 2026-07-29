@@ -4,6 +4,8 @@ import { fileToRequest } from "./image";
 export interface InputPanel {
   el: HTMLElement;
   setBusy(busy: boolean, statusText?: string): void;
+  /** Reset the Photo/PDF tab after its file has produced a table. */
+  clearUpload(): void;
 }
 
 type TabId = "url" | "paste" | "upload";
@@ -62,27 +64,43 @@ export function createInputPanel(
   pasteBody.appendChild(textarea);
 
   // --- Upload tab
+  const DROP_PROMPT =
+    "Drop a photo of a recipe here (cookbook page, handwritten card) or a PDF — or click to choose. You can also paste an image from the clipboard.";
   const uploadBody = document.createElement("div");
   const drop = document.createElement("div");
   drop.className = "dropzone";
-  drop.textContent =
-    "Drop a photo of a recipe here (cookbook page, handwritten card) or a PDF — or click to choose. You can also paste an image from the clipboard.";
+  drop.textContent = DROP_PROMPT;
   const fileInput = document.createElement("input");
   fileInput.type = "file";
   fileInput.accept = "image/*,application/pdf";
   fileInput.style.display = "none";
   let pendingFile: File | null = null;
+  let previewUrl: string | null = null;
+
+  function dropPreviewUrl() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = null;
+  }
 
   function showPreview(file: File) {
     pendingFile = file;
+    dropPreviewUrl();
     drop.textContent = `Ready: ${file.name || "pasted image"} (${Math.round(file.size / 1024)} kB)`;
     if (file.type.startsWith("image/")) {
       const img = document.createElement("img");
       img.className = "preview";
       img.alt = "preview";
-      img.src = URL.createObjectURL(file);
+      previewUrl = URL.createObjectURL(file);
+      img.src = previewUrl;
       drop.appendChild(img);
     }
+  }
+
+  function clearUpload() {
+    pendingFile = null;
+    fileInput.value = "";
+    dropPreviewUrl();
+    drop.textContent = DROP_PROMPT;
   }
 
   drop.addEventListener("click", () => fileInput.click());
@@ -150,6 +168,7 @@ export function createInputPanel(
 
   return {
     el: panel,
+    clearUpload,
     setBusy(busy, statusText) {
       go.disabled = busy;
       status.innerHTML = "";
