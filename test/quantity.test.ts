@@ -75,7 +75,12 @@ describe("preferUnits", () => {
 describe("transformQuantity + unscaleQuantity", () => {
   it("composes units, scale, and style", () => {
     expect(
-      transformQuantity("3/4 cup (150 g)", { units: "metric", numbers: "decimals", scale: 2 }),
+      transformQuantity("3/4 cup (150 g)", {
+        units: "metric",
+        numbers: "decimals",
+        scale: 2,
+        labels: "full",
+      }),
     ).toBe("300 g");
   });
 

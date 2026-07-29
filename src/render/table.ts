@@ -1,4 +1,5 @@
 import type { RecipeTree } from "../../shared/schema";
+import { briefLabel } from "../labels";
 import { layout } from "./layout";
 
 // Grid -> DOM. Every editable region carries a data-path attribute:
@@ -17,11 +18,27 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return e;
 }
 
-export function renderTable(recipe: RecipeTree): HTMLTableElement {
+export function renderTable(
+  recipe: RecipeTree,
+  labelMode: "full" | "brief" = "full",
+): HTMLTableElement {
   const grid = layout(recipe);
   const table = el("table", "recipe-table");
   const tbody = el("tbody");
   table.appendChild(tbody);
+
+  // Brief mode is a lossy display of the label, so the span is read-only
+  // (an edit would overwrite the full text) and shows the full label on hover.
+  const labelSpan = (text: string): HTMLSpanElement => {
+    const brief = labelMode === "brief" ? briefLabel(text) : text;
+    const span = el("span", "label", brief);
+    span.dataset.field = "label";
+    if (brief !== text) {
+      span.title = `${text} — switch Steps to Full to edit`;
+      span.dataset.readonly = "1";
+    }
+    return span;
+  };
 
   const titleRow = el("tr", "title-row");
   const titleCell = el("th");
@@ -67,9 +84,7 @@ export function renderTable(recipe: RecipeTree): HTMLTableElement {
         }
       } else {
         td.className = "step";
-        const label = el("span", "label", cell.node.label);
-        label.dataset.field = "label";
-        td.appendChild(label);
+        td.appendChild(labelSpan(cell.node.label));
       }
       tr.appendChild(td);
     }
@@ -81,9 +96,7 @@ export function renderTable(recipe: RecipeTree): HTMLTableElement {
     const td = el("td", "finish");
     td.colSpan = grid.totalCols;
     td.dataset.path = finish.path;
-    const label = el("span", "label", finish.node.label);
-    label.dataset.field = "label";
-    td.appendChild(label);
+    td.appendChild(labelSpan(finish.node.label));
     tr.appendChild(td);
     tbody.appendChild(tr);
   }

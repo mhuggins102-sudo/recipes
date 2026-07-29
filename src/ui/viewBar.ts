@@ -16,6 +16,7 @@ export interface ViewBar {
 interface Prefs {
   units: ViewOptions["units"];
   numbers: ViewOptions["numbers"];
+  labels: ViewOptions["labels"];
 }
 
 function loadPrefs(): Partial<Prefs> {
@@ -41,7 +42,8 @@ export function createViewBar(onChange: () => void): ViewBar {
   const el = document.createElement("div");
   el.className = "view-bar";
 
-  const persist = () => storePrefs({ units: view.units, numbers: view.numbers });
+  const persist = () =>
+    storePrefs({ units: view.units, numbers: view.numbers, labels: view.labels });
 
   const units = segmented<ViewOptions["units"]>(
     "Units",
@@ -73,6 +75,20 @@ export function createViewBar(onChange: () => void): ViewBar {
     },
   );
 
+  const labels = segmented<ViewOptions["labels"]>(
+    "Steps",
+    [
+      ["full", "Full"],
+      ["brief", "Brief"],
+    ],
+    view.labels,
+    (v) => {
+      view.labels = v;
+      persist();
+      onChange();
+    },
+  );
+
   const scale = segmented<string>(
     "Scale",
     [
@@ -89,7 +105,7 @@ export function createViewBar(onChange: () => void): ViewBar {
     },
   );
 
-  el.append(units.group, numbers.group, scale.group);
+  el.append(units.group, numbers.group, labels.group, scale.group);
 
   return {
     el,
