@@ -1,6 +1,10 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  define: {
+    // Stamped into generated PDFs' Producer metadata (see src/buildId.ts).
+    __BUILD_ID__: JSON.stringify(process.env.CF_PAGES_COMMIT_SHA?.slice(0, 7) ?? "dev"),
+  },
   build: {
     outDir: "dist",
   },
