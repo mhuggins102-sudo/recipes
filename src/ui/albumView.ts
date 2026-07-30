@@ -58,7 +58,10 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
   let cards: CardRecord[] = [];
   let selectedId: string | null = null;
   const phaseText = new Map<string, string>();
-  const objectUrls: string[] = [];
+  // One object URL per photo, reused across re-renders — minting fresh URLs
+  // on every render leaked hundreds of live blob URLs per album, and under
+  // memory pressure Safari evicts their decoded images (broken-image flash).
+  const blobUrls = new Map<string, string>();
 
   const queue: AlbumQueue = createAlbumQueue(
     album,
@@ -87,10 +90,34 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
     }
   }
 
-  function thumbUrl(blob: Blob): string {
-    const url = URL.createObjectURL(blob);
-    objectUrls.push(url);
+  function cachedUrl(key: string, blob: Blob): string {
+    let url = blobUrls.get(key);
+    if (!url) {
+      url = URL.createObjectURL(blob);
+      blobUrls.set(key, url);
+    }
     return url;
+  }
+
+  /** A photo <img> that re-mints its blob URL once if the browser drops it. */
+  function photoImg(key: string, blob: Blob, className?: string): HTMLImageElement {
+    const img = el("img", className) as HTMLImageElement;
+    img.decoding = "async";
+    let retried = false;
+    img.addEventListener("error", () => {
+      if (retried) return;
+      retried = true;
+      const old = blobUrls.get(key);
+      if (old) {
+        URL.revokeObjectURL(old);
+        blobUrls.delete(key);
+      }
+      setTimeout(() => {
+        img.src = cachedUrl(key, blob);
+      }, 400);
+    });
+    img.src = cachedUrl(key, blob);
+    return img;
   }
 
   // --- Header ---------------------------------------------------------------
@@ -195,8 +222,7 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
     for (const card of cards) {
       const cell = el("figure", "album-card");
       if (card.id === selectedId) cell.classList.add("selected");
-      const img = el("img") as HTMLImageElement;
-      img.src = thumbUrl(card.thumb);
+      const img = photoImg(`${card.id}:thumb`, card.thumb);
       img.alt = card.recipe?.title ?? "recipe card";
       const badge = el(
         "figcaption",
@@ -265,8 +291,7 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
 
     const heading = el("h2", undefined, "Review against the card");
     const pane = el("div", "review-pane");
-    const photo = el("img", "review-photo") as HTMLImageElement;
-    photo.src = thumbUrl(card.image);
+    const photo = photoImg(`${card.id}:image`, card.image, "review-photo");
     photo.alt = "original recipe card";
     const work = el("div", "review-work");
 
@@ -474,7 +499,8 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
     el: root,
     dispose() {
       clearTimeout(persistTimer);
-      for (const url of objectUrls) URL.revokeObjectURL(url);
+      for (const url of blobUrls.values()) URL.revokeObjectURL(url);
+      blobUrls.clear();
     },
   };
 }
