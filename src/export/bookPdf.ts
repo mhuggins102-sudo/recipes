@@ -342,7 +342,15 @@ export async function exportCookbookPdf(
           else if (placed.kind === "toc") stage.appendChild(tocEl(tocEntries, placed.from!, placed.to!));
           else if (placed.kind === "heading" && m)
             stage.appendChild(headingEl(m.recipe, placed.continued ?? false));
-          else if (placed.kind === "table" && m) stage.appendChild(tableEl(m));
+          else if (placed.kind === "table" && m) {
+            // Collapsed table borders straddle the border box — their outer
+            // half renders outside the element and would be clipped by the
+            // canvas (visibly so for 1px hairline themes). Pad the stage so
+            // the overhang lands inside the capture; ~6px on a ~1400px canvas
+            // is imperceptible in the placed box.
+            stage.style.padding = "3px";
+            stage.appendChild(tableEl(m));
+          }
           else if (placed.kind === "instructions" && m)
             stage.appendChild(instructionsEl(m.recipe, placed.from!, placed.to!));
           raster = await rasterize(writer, stage, rasterOptions);
