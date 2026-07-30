@@ -35,6 +35,8 @@ export interface RecipeTree {
   /** Root = final action; rendered as the rightmost full-height cell. */
   tree: StepNode;
   notes?: string[];
+  /** Numbered directions in the source's own wording, for step-by-step readers. */
+  instructions?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -71,6 +73,8 @@ export const RecipeTreeZ: z.ZodType<RecipeTree> = z
     setup: z.array(z.string()),
     tree: StepZ,
     notes: z.array(z.string()).optional(),
+    // Optional so recipes stored before this field existed keep validating.
+    instructions: z.array(z.string().min(1)).optional(),
   })
   .refine((r) => treeHeight(r.tree) <= MAX_TREE_HEIGHT, {
     message: `tree is deeper than ${MAX_TREE_HEIGHT} levels`,
@@ -122,6 +126,12 @@ const EXAMPLE: RecipeTree = {
       },
     ],
   },
+  instructions: [
+    "Melt the butter in a small saucepan over low heat.",
+    "Mix in 3/4 cup sugar and the eggs until smooth.",
+    "Fold in the flour.",
+    "Pour into the pan, sprinkle the remaining 1/4 cup sugar on top, and bake 30 to 40 minutes.",
+  ],
 };
 
 // The output contract lives in this prompt (with Zod validation server-side)
@@ -132,10 +142,15 @@ export const SYSTEM_PROMPT = `You convert recipes into a strict tree structure t
 
 Output format:
 - Respond with a single JSON object and nothing else — no markdown fences, no commentary, no text before or after it.
-- Shape: {"title": string, "servings"?: string, "setup": string[], "tree": Step, "notes"?: string[]}
+- Shape: {"title": string, "servings"?: string, "setup": string[], "tree": Step, "notes"?: string[], "instructions": string[]}
   where Step = {"kind": "step", "label": string, "children": (Step | Ingredient)[]} with children non-empty,
   and Ingredient = {"kind": "ingredient", "quantity": string, "name": string, "note"?: string}.
 - Steps nest at most 12 levels deep.
+
+Step-by-step instructions:
+- Always also emit "instructions": the recipe's directions as an ordered list, one item per step, in the source's own order.
+- Preserve the source's original wording as closely as possible — keep its phrasing, quirks, and abbreviations; fix only obvious transcription or OCR errors. Never merge, reorder, or paraphrase steps.
+- Lines that went into setup[] (preheating, pan preparation) are not repeated in instructions unless the source writes them as a numbered step.
 
 Structure rules:
 - Ingredients are leaves. Every cooking action is a step node whose children are exactly the ingredients and sub-mixtures that go INTO that action. The final action is the root of the tree.

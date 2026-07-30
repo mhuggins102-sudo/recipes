@@ -398,6 +398,294 @@ button.linkish {
   margin-top: 0.5rem;
 }
 
+/* ---- Instructions (classic numbered directions) ---- */
+
+.instr-wrap .instructions,
+.review-work .instructions {
+  background: var(--card);
+  border: 2px solid var(--grid);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-top: 0.9rem;
+}
+
+.instructions h3 {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+  color: var(--accent);
+}
+
+.instructions ol {
+  margin: 0;
+  padding-left: 1.5rem;
+}
+
+.instructions li {
+  margin: 0 0 0.35rem;
+}
+
+/* ---- Cookbook albums ---- */
+
+button.album-cta {
+  display: block;
+  margin: -0.75rem 0 1.25rem;
+}
+
+.album-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.album-back {
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+input.album-title,
+input.album-author {
+  font: inherit;
+  font-weight: bold;
+  color: var(--accent);
+  border: 1px solid var(--grid-soft);
+  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  flex: 1;
+  min-width: 0;
+  background: var(--card);
+}
+
+input.album-author {
+  font-weight: normal;
+  color: var(--ink);
+  display: block;
+  width: 100%;
+  max-width: 24rem;
+  margin-bottom: 0.6rem;
+}
+
+.album-intake .dropzone {
+  background: var(--card);
+}
+
+.album-progress {
+  color: var(--muted);
+  margin: 0.6rem 0 0.4rem;
+}
+
+.album-error {
+  color: #7d241a;
+}
+
+.album-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0.6rem 0 1rem;
+}
+
+.album-card {
+  position: relative;
+  margin: 0;
+  width: 132px;
+  cursor: pointer;
+  border: 2px solid var(--grid-soft);
+  border-radius: 8px;
+  padding: 4px;
+  background: var(--card);
+}
+
+.album-card.selected {
+  border-color: var(--accent);
+}
+
+.album-card img {
+  width: 100%;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
+}
+
+.album-card .badge {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-align: center;
+  padding-top: 2px;
+}
+
+.album-card .badge.done {
+  color: var(--accent);
+}
+
+.album-card .badge.error {
+  color: #c0392b;
+}
+
+.album-card .del {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: var(--card);
+  border-radius: 50%;
+}
+
+.album-card button.ghost {
+  width: 100%;
+  margin-top: 2px;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.8rem;
+}
+
+.album-review h2,
+.album-builder h2 {
+  font-size: 1.05rem;
+  color: var(--accent);
+}
+
+.review-pane {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) 5fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.review-photo {
+  width: 100%;
+  border: 2px solid var(--grid);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.review-work .view-bar {
+  margin-bottom: 0.6rem;
+}
+
+.review-work > button {
+  margin: 0.6rem 0.6rem 0 0;
+}
+
+.album-toc {
+  display: block;
+  margin: 0.4rem 0 0.6rem;
+  color: var(--muted);
+}
+
+.builder-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.builder-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.builder-title {
+  font-weight: bold;
+  color: var(--accent);
+}
+
+.builder-warn {
+  color: #a06a00;
+  font-size: 0.85em;
+}
+
+.builder-list .move {
+  padding: 0.1rem 0.5rem;
+}
+
+/* ---- Book stages (offscreen, rasterized at 300 DPI for the cookbook) ---- */
+
+.book-stage {
+  position: absolute;
+  left: -100000px;
+  top: 0;
+  background: white;
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1.4;
+}
+
+.book-stage .book-heading {
+  margin: 0;
+  font-size: 30px;
+  color: var(--accent);
+}
+
+.book-stage .recipe-table .title-row th {
+  font-size: 1.2em;
+}
+
+.book-stage .instructions h3 {
+  margin: 0 0 8px;
+  font-size: 24px;
+  color: var(--accent);
+}
+
+.book-stage .instructions ol {
+  margin: 0;
+  padding-left: 34px;
+}
+
+.book-stage .instructions li {
+  margin: 0;
+}
+
+.book-title-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  position: relative;
+}
+
+.book-title-page h1 {
+  font-size: 56px;
+  color: var(--accent);
+  margin: 0 0 18px;
+}
+
+.book-title-page .book-author {
+  font-size: 26px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.book-title-page .book-brand {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  font-size: 18px;
+  color: var(--muted);
+}
+
+.book-toc ul {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0 0;
+}
+
+.book-toc li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 5px 0;
+  border-bottom: 1px dotted var(--grid-soft);
+}
+
+.book-toc .toc-title {
+  font-weight: bold;
+}
+
 /* Offscreen stage for PNG export — must be laid out, so park it off-viewport
    rather than display:none. */
 .export-stage {
@@ -538,6 +826,19 @@ button.linkish {
   .recents li .when,
   .recents li .del {
     flex: none;
+  }
+
+  /* Album flow: photo above the table instead of beside it; smaller thumbs. */
+  .review-pane {
+    grid-template-columns: 1fr;
+  }
+
+  .album-card {
+    width: 104px;
+  }
+
+  .album-card img {
+    height: 76px;
   }
 }
 

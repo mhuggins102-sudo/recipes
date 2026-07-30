@@ -10,7 +10,10 @@
   .recents,
   .error-box,
   .hint,
-  .json-editor {
+  .json-editor,
+  .instr-wrap,
+  .album-cta,
+  .album {
     display: none !important;
   }
 

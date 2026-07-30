@@ -6,7 +6,8 @@ import { nodeAtPath } from "../render/layout";
 // written straight back into the recipe object on input — the table is never
 // re-rendered during typing, so the caret is preserved.
 
-const EDITABLE_SELECTOR = "[data-field], [data-path='title'], [data-path='servings'], td.setup, td.notes";
+const EDITABLE_SELECTOR =
+  "[data-field], [data-path='title'], [data-path='servings'], td.setup, td.notes, li[data-path^='instructions.']";
 
 /** Which kind of value an edit touched — lets the caller normalize scaled quantities. */
 export type EditKind = "quantity" | "servings" | "other";
@@ -86,6 +87,11 @@ function writeBack(
   const notesMatch = /^notes\.(\d+)$/.exec(path);
   if (notesMatch && recipe.notes) {
     recipe.notes[Number(notesMatch[1])] = text;
+    return true;
+  }
+  const instrMatch = /^instructions\.(\d+)$/.exec(path);
+  if (instrMatch && recipe.instructions) {
+    recipe.instructions[Number(instrMatch[1])] = text;
     return true;
   }
   return false;
