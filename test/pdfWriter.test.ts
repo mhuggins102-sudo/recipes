@@ -73,6 +73,28 @@ describe("PdfWriter", () => {
     expect(Array.from(inflated)).toEqual(Array.from(rgb));
   });
 
+  it("paints page backgrounds and photo frames as vector ops", async () => {
+    const writer = new PdfWriter();
+    const img = writer.addJpeg(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), 4, 4);
+    writer.addPage(576, 720, [{ image: img, x: 100, y: 100, w: 200, h: 150 }], {
+      background: [0.98, 0.96, 0.91],
+      frames: [{ x: 100, y: 100, w: 200, h: 150, color: [0.42, 0.35, 0.25], width: 1 }],
+    });
+    const blob = writer.finish("Themed");
+    const text = Buffer.from(await blob.arrayBuffer()).toString("latin1");
+    expect(text).toContain("q\n0.98 0.96 0.91 rg\n0 0 576 720 re\nf\nQ\n");
+    expect(text).toContain("q\n0.42 0.35 0.25 RG\n1 w\n100 100 200 150 re\nS\nQ\n");
+    // Background paints before the image, the frame after it.
+    expect(text.indexOf(" rg\n")).toBeLessThan(text.indexOf(" cm\n"));
+    expect(text.indexOf(" RG\n")).toBeGreaterThan(text.indexOf(" cm\n"));
+  });
+
+  it("emits no paint ops when a page has no options", async () => {
+    const { text } = await build();
+    expect(text).not.toContain(" re\nf\n");
+    expect(text).not.toContain(" re\nS\n");
+  });
+
   it("declares per-page image resources and placements", async () => {
     const { text } = await build();
     // Page 1 uses both images; pages 2 and 3 one each.

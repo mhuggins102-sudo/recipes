@@ -613,6 +613,56 @@ input.album-author {
   padding: 0.1rem 0.5rem;
 }
 
+/* ---- Book design picker ---- */
+
+.theme-picker {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: 0.2rem 0 0.8rem;
+}
+
+button.theme-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+  width: 158px;
+  border: 2px solid var(--grid-soft);
+  background: var(--card);
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+button.theme-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.theme-chip {
+  display: block;
+  height: 44px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  font-size: 24px;
+  font-weight: bold;
+  line-height: 40px;
+  padding-left: 10px;
+}
+
+.theme-label {
+  font-weight: bold;
+}
+
+.theme-desc {
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.3;
+}
+
 /* ---- Book stages (offscreen, rasterized at 300 DPI for the cookbook) ---- */
 
 .book-stage {
@@ -726,6 +776,164 @@ input.album-author {
 
 .book-toc .toc-title {
   font-weight: bold;
+}
+
+/* ---- Cookbook themes (registry: src/export/bookThemes.ts) ----
+   Scoped to .book-stage so the on-screen app keeps its own look. The base
+   table styles read the site's custom properties, so each theme re-points
+   --grid/--accent/--paper/--muted on the stage and adds targeted overrides. */
+
+/* Heirloom — cream pages, warm sepia serif, vintage family cookbook. */
+
+.book-stage.theme-heirloom {
+  --grid: #8a6a4f;
+  --grid-soft: #c2ab90;
+  --accent: #6b4f2e;
+  --paper: #f3e9d2;
+  --muted: #7a6a55;
+  color: #4a3a2a;
+  background: #faf5e9;
+  font-family: Georgia, "Palatino Linotype", "Book Antiqua", serif;
+}
+
+.book-stage.theme-heirloom .recipe-table td.setup {
+  background: #f6efdd;
+}
+
+.book-stage.theme-heirloom .recipe-table td.step,
+.book-stage.theme-heirloom .recipe-table td.finish {
+  background: #f8f2e3;
+}
+
+.book-stage.theme-heirloom .recipe-table td.notes {
+  background: #f6efdd;
+}
+
+.book-stage.theme-heirloom .recipe-table {
+  background: #fffdf6;
+}
+
+.book-stage.theme-heirloom .recipe-table .title-row th {
+  background: var(--paper);
+  font-style: italic;
+}
+
+.book-stage.theme-heirloom .book-heading,
+.book-stage.theme-heirloom .instructions h3 {
+  font-style: italic;
+  font-weight: normal;
+}
+
+.book-stage.theme-heirloom .book-heading {
+  border-bottom: 4px double var(--grid-soft);
+  padding-bottom: 6px;
+}
+
+.book-stage.theme-heirloom .book-title-page h1 {
+  font-style: italic;
+  font-weight: normal;
+  letter-spacing: 1px;
+  border-bottom: 4px double var(--grid-soft);
+  padding-bottom: 20px;
+}
+
+.book-stage.theme-heirloom .book-toc li {
+  border-bottom-style: solid;
+  border-bottom-color: var(--grid-soft);
+}
+
+/* Botanical — soft sage, airy small-caps, hairline rules. */
+
+.book-stage.theme-botanical {
+  --grid: #6b7f5c;
+  --grid-soft: #a9b89c;
+  --accent: #5f7355;
+  --paper: #eaf0e2;
+  --muted: #6f7a68;
+  color: #2e352b;
+  background: #f4f7f1;
+  font-family: Optima, Candara, "Segoe UI", Verdana, sans-serif;
+}
+
+.book-stage.theme-botanical .recipe-table th,
+.book-stage.theme-botanical .recipe-table td {
+  border-width: 1px;
+}
+
+.book-stage.theme-botanical .recipe-table td.setup {
+  background: #f0f5ea;
+}
+
+.book-stage.theme-botanical .recipe-table td.step,
+.book-stage.theme-botanical .recipe-table td.finish {
+  background: #f4f8ee;
+}
+
+.book-stage.theme-botanical .recipe-table td.notes {
+  background: #eef3e7;
+}
+
+.book-stage.theme-botanical .book-heading,
+.book-stage.theme-botanical .instructions h3,
+.book-stage.theme-botanical .book-title-page h1 {
+  font-variant: small-caps;
+  letter-spacing: 2px;
+  font-weight: 600;
+}
+
+.book-stage.theme-botanical .book-toc li {
+  border-bottom: 1px dotted var(--grid-soft);
+}
+
+/* Modern — minimal black & white with a terracotta accent. */
+
+.book-stage.theme-modern {
+  --grid: #24292e;
+  --grid-soft: #9aa0a6;
+  --accent: #c05b3f;
+  --paper: #f2f2f2;
+  --muted: #5f6368;
+  color: #24292e;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.book-stage.theme-modern .recipe-table th,
+.book-stage.theme-modern .recipe-table td {
+  border-width: 1px;
+}
+
+.book-stage.theme-modern .recipe-table .title-row th {
+  background: #f2f2f2;
+}
+
+.book-stage.theme-modern .recipe-table td.setup,
+.book-stage.theme-modern .recipe-table td.step,
+.book-stage.theme-modern .recipe-table td.finish {
+  background: #fafafa;
+}
+
+.book-stage.theme-modern .recipe-table td.notes {
+  background: #f7f7f7;
+}
+
+.book-stage.theme-modern .book-heading {
+  color: #24292e;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.book-stage.theme-modern .instructions .num {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.book-stage.theme-modern .book-title-page h1 {
+  color: #24292e;
+  letter-spacing: -1px;
+}
+
+.book-stage.theme-modern .book-title-page .book-author {
+  color: var(--accent);
 }
 
 /* Offscreen stage for PNG export — must be laid out, so park it off-viewport

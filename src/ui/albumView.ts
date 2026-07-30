@@ -10,6 +10,7 @@ import {
   type CardRecord,
 } from "../album/store";
 import { exportCookbookPdf, photoPrintDpi } from "../export/bookPdf";
+import { BOOK_THEMES } from "../export/bookThemes";
 import { downloadFile } from "../export/image";
 import { applyView, unscaleQuantity, type ViewOptions } from "../quantity";
 import { renderInstructions } from "../render/instructions";
@@ -379,6 +380,29 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
     if (!done.length) return;
 
     builder.appendChild(el("h2", undefined, "Build the cookbook"));
+
+    // Design picker — the theme is stored on the album, so regenerating in a
+    // different look is just another Generate click.
+    const themeRow = el("div", "theme-picker");
+    for (const theme of BOOK_THEMES) {
+      const card = button("theme-card", "");
+      if ((album.theme ?? "standard") === theme.id) card.classList.add("selected");
+      const chip = el("span", "theme-chip", "Aa");
+      chip.style.background = theme.pageBg;
+      chip.style.color = theme.accent;
+      chip.style.fontFamily = theme.fontFamily;
+      chip.style.borderBottom = `4px solid ${theme.accent}`;
+      const label = el("span", "theme-label", theme.label);
+      const desc = el("span", "theme-desc", theme.description);
+      card.append(chip, label, desc);
+      card.addEventListener("click", () => {
+        album.theme = theme.id;
+        void updateAlbum(album);
+        renderBuilder();
+      });
+      themeRow.appendChild(card);
+    }
+    builder.appendChild(themeRow);
 
     const authorInput = el("input", "album-author") as HTMLInputElement;
     authorInput.placeholder = "Author (optional, for the title page)";

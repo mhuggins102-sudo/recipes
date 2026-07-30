@@ -21,10 +21,25 @@ interface ImageEntry {
   filter: "DCTDecode" | "FlateDecode" | null;
 }
 
+export interface PageOptions {
+  /** Full-page background fill, RGB floats 0–1. */
+  background?: [number, number, number];
+  /** Stroked rectangles (photo frames), PDF-native coords in pt. */
+  frames?: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    color: [number, number, number];
+    width: number;
+  }[];
+}
+
 interface PageEntry {
   width: number;
   height: number;
   placements: Placement[];
+  options?: PageOptions;
 }
 
 /** zlib-deflate via the built-in CompressionStream; null when unsupported. */
@@ -67,8 +82,8 @@ export class PdfWriter {
     return this.images.length - 1;
   }
 
-  addPage(width: number, height: number, placements: Placement[]): void {
-    this.pages.push({ width, height, placements });
+  addPage(width: number, height: number, placements: Placement[], options?: PageOptions): void {
+    this.pages.push({ width, height, placements, options });
   }
 
   /**
@@ -113,12 +128,28 @@ export class PdfWriter {
         `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${round2(page.width)} ${round2(page.height)}] ` +
           `/Resources << /XObject << ${xobjects} >> >> /Contents ${contentsObj(i)} 0 R >>`,
       );
-      const content = page.placements
+      // Theme paint (vector, a few bytes): background fill first, so images
+      // draw over it; photo frames last, so strokes sit over photo edges.
+      const rgb = (c: [number, number, number]) => c.map((v) => round2(v)).join(" ");
+      const background = page.options?.background
+        ? `q\n${rgb(page.options.background)} rg\n0 0 ${round2(page.width)} ${round2(page.height)} re\nf\nQ\n`
+        : "";
+      const frames = (page.options?.frames ?? [])
         .map(
-          (p) =>
-            `q\n${round2(p.w)} 0 0 ${round2(p.h)} ${round2(p.x)} ${round2(p.y)} cm\n/Im${p.image} Do\nQ\n`,
+          (fr) =>
+            `q\n${rgb(fr.color)} RG\n${round2(fr.width)} w\n` +
+            `${round2(fr.x)} ${round2(fr.y)} ${round2(fr.w)} ${round2(fr.h)} re\nS\nQ\n`,
         )
         .join("");
+      const content =
+        background +
+        page.placements
+          .map(
+            (p) =>
+              `q\n${round2(p.w)} 0 0 ${round2(p.h)} ${round2(p.x)} ${round2(p.y)} cm\n/Im${p.image} Do\nQ\n`,
+          )
+          .join("") +
+        frames;
       obj(contentsObj(i), `<< /Length ${content.length} >>\nstream\n${content}endstream`);
     });
 

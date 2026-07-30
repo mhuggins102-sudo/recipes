@@ -89,6 +89,11 @@ test("album: intake, convert, review-edit persists, cookbook PDF", async ({ page
   await expect(page.locator('button:has-text("Generate cookbook PDF")')).toBeDisabled();
   await expect(page.locator('button:has-text("Review next")')).toBeVisible();
 
+  // Pick the Heirloom design; the choice persists in IndexedDB across reload.
+  await page.click('.theme-card:has-text("Heirloom")');
+  await page.reload();
+  await expect(page.locator(".theme-card.selected")).toHaveText(/Heirloom/);
+
   // Approve flow advances through unreviewed cards; three approvals clear the gate.
   for (let i = 0; i < 3; i++) {
     await page.click('button:has-text("Looks good")');
@@ -109,6 +114,8 @@ test("album: intake, convert, review-edit persists, cookbook PDF", async ({ page
   expect(text.startsWith("%PDF-1.4")).toBe(true);
   expect(text).toContain("/Count 5");
   expect(text).toContain("/MediaBox [0 0 576 720]");
+  // Heirloom theme: cream page-background fill ops are present.
+  expect(text).toContain(" rg\n0 0 576 720 re\nf\n");
   expect(text.endsWith("%%EOF\n")).toBe(true);
 });
 
