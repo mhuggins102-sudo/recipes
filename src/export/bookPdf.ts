@@ -328,9 +328,18 @@ export async function exportCookbookPdf(
         // Rasterize the block on a fresh stage (memory-friendly: one at a
         // time) at the width the plan reserved for it — instructions may be
         // a side column, tables their natural width.
+        // Table stages get padding so nothing the capture might clip touches
+        // the canvas edge: collapsed borders straddle the border box (their
+        // outer half renders outside the element), and WebKit can lay out
+        // the html-to-image clone slightly taller than the live element —
+        // drift that grows with table height. The padding must be ADDED to
+        // the explicit width (global border-box sizing would otherwise carve
+        // it out and re-wrap cells narrower than the measurement pass saw).
+        const TABLE_PAD_X = 4;
+        const TABLE_PAD_BOTTOM = 16;
         const stage = mountStage(
           placed.kind === "table" && m
-            ? Math.ceil(m.tableWpx)
+            ? Math.ceil(m.tableWpx) + TABLE_PAD_X * 2
             : placed.kind === "instructions"
               ? Math.round(placed.w / PT_PER_PX)
               : STAGE_WIDTH_PX,
@@ -338,19 +347,19 @@ export async function exportCookbookPdf(
         );
         let raster: Rasterized;
         try {
+          if (placed.kind === "table" && m) {
+            stage.style.padding = `${TABLE_PAD_X}px ${TABLE_PAD_X}px ${TABLE_PAD_BOTTOM}px`;
+          } else {
+            // Text blocks can also end in a rule at the exact canvas edge
+            // (e.g. the TOC's last underline) — same clip risk, same guard.
+            // Vertical only, so the explicit width (border-box) is untouched.
+            stage.style.paddingBottom = "12px";
+          }
           if (placed.kind === "title") stage.appendChild(titlePageEl(album));
           else if (placed.kind === "toc") stage.appendChild(tocEl(tocEntries, placed.from!, placed.to!));
           else if (placed.kind === "heading" && m)
             stage.appendChild(headingEl(m.recipe, placed.continued ?? false));
-          else if (placed.kind === "table" && m) {
-            // Collapsed table borders straddle the border box — their outer
-            // half renders outside the element and would be clipped by the
-            // canvas (visibly so for 1px hairline themes). Pad the stage so
-            // the overhang lands inside the capture; ~6px on a ~1400px canvas
-            // is imperceptible in the placed box.
-            stage.style.padding = "3px";
-            stage.appendChild(tableEl(m));
-          }
+          else if (placed.kind === "table" && m) stage.appendChild(tableEl(m));
           else if (placed.kind === "instructions" && m)
             stage.appendChild(instructionsEl(m.recipe, placed.from!, placed.to!));
           raster = await rasterize(writer, stage, rasterOptions);
@@ -359,15 +368,20 @@ export async function exportCookbookPdf(
         }
         image = raster.image;
         if (placed.kind === "table" && m) {
+          // Aspect-true: derive the height from the ACTUAL canvas rather
+          // than assuming capture height == measured height (WebKit drift).
+          // The blank padding bleeds a few pt into the following gap —
+          // background-colored, invisible — instead of squeezing the table.
+          const scale = m.tableWpt / (raster.wPx * PT_PER_PX);
           w = m.tableWpt;
-          h = m.tableHpt;
+          h = raster.hPx * PT_PER_PX * scale;
         } else {
-          // Draw at the raster's natural size (top-anchored in its slot) —
-          // the reserved slot includes inter-item spacing the DOM doesn't,
-          // and drawing into it verbatim would stretch the text vertically.
+          // Aspect-true, top-anchored: never stretch or crop the raster.
+          // It may run slightly past the reserved slot (blank guard padding
+          // and any clone-layout drift) — the inter-block gaps absorb it.
           const scale = Math.min(1, placed.w / (raster.wPx * PT_PER_PX));
           w = raster.wPx * PT_PER_PX * scale;
-          h = Math.min(placed.h, raster.hPx * PT_PER_PX * scale);
+          h = Math.min(raster.hPx * PT_PER_PX * scale, placed.h + 16);
         }
       }
       const pdfX = left + x;
