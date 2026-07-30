@@ -140,10 +140,46 @@ export function preferUnits(text: string, units: ViewOptions["units"]): string {
   return text;
 }
 
+// --- Unit abbreviation -----------------------------------------------------
+
+// Applied only when a units preference (metric/imperial) is selected — that's
+// already a "normalize it for me" gesture. "As written" stays verbatim.
+// Ordered longest-first; word boundaries keep "kilograms"→kg and
+// "milliliters"→ml intact. Single letters (T, t, C) are never touched.
+// An optional trailing period is absorbed; abbreviations don't pluralize.
+const UNIT_ABBREVIATIONS: [RegExp, string][] = [
+  [/\bfluid\s+ounces?\b\.?/gi, "fl oz"],
+  [/\btablespoons?\b\.?/gi, "tbsp"],
+  [/\btb(?:s|l|ls|lsp)\b\.?/gi, "tbsp"],
+  [/\bteaspoons?\b\.?/gi, "tsp"],
+  [/\bteas\b\.?/gi, "tsp"],
+  [/\bcups?\b\.?/gi, "c"],
+  [/\bounces?\b\.?/gi, "oz"],
+  [/\bpounds?\b\.?/gi, "lb"],
+  [/\bkilograms?\b\.?/gi, "kg"],
+  [/\bgrams?\b\.?/gi, "g"],
+  [/\bmillilit(?:er|re)s?\b\.?/gi, "ml"],
+  [/\blit(?:er|re)s?\b\.?/gi, "L"],
+  [/\bquarts?\b\.?/gi, "qt"],
+  [/\bpints?\b\.?/gi, "pt"],
+  [/\bgallons?\b\.?/gi, "gal"],
+  // Already-short forms just lose a trailing period ("tsp." → "tsp").
+  [/\b(tbsp|tsp|oz|lb|kg|g|ml|qt|pt|gal|c)\b\./gi, "$1"],
+];
+
+/** "2 tablespoons" → "2 tbsp", "300 milliliters" → "300 ml", … */
+export function abbreviateUnits(text: string): string {
+  let out = text;
+  for (const [re, short] of UNIT_ABBREVIATIONS) out = out.replace(re, short);
+  return out;
+}
+
 // --- Composition -----------------------------------------------------------
 
 export function transformQuantity(text: string, view: ViewOptions): string {
-  return transformNumbers(preferUnits(text, view.units), view.scale, view.numbers);
+  const preferred = preferUnits(text, view.units);
+  const display = view.units === "original" ? preferred : abbreviateUnits(preferred);
+  return transformNumbers(display, view.scale, view.numbers);
 }
 
 /** Undo the scale on an edited display string so the base recipe stays 1×. */

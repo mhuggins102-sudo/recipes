@@ -79,11 +79,12 @@ test("album: intake, convert, review-edit persists, cookbook PDF", async ({ page
   });
   await page.waitForTimeout(1200); // debounced IndexedDB persist
 
-  // The edit survives a full reload (IndexedDB, not memory).
+  // The edit survives a full reload (IndexedDB, not memory). The imperial
+  // default also abbreviates the displayed unit ("9 cups" → "9 c").
   await page.reload();
   await expect(page.locator(".album-card")).toHaveCount(3);
   await page.locator(".album-card").first().click();
-  await expect(page.locator(".review-pane td.ingredient .qty").first()).toHaveText(/9 cups/);
+  await expect(page.locator(".review-pane td.ingredient .qty").first()).toHaveText("9 c");
 
   // Generation is gated until every included card has been reviewed.
   await expect(page.locator('button:has-text("Generate cookbook PDF")')).toBeDisabled();

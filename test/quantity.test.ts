@@ -2,12 +2,76 @@ import { describe, expect, it } from "vitest";
 import type { RecipeTree } from "../shared/schema";
 import {
   IDENTITY_VIEW,
+  abbreviateUnits,
   applyView,
   preferUnits,
   transformNumbers,
   transformQuantity,
   unscaleQuantity,
 } from "../src/quantity";
+
+describe("abbreviateUnits", () => {
+  it("shortens the common long unit words", () => {
+    expect(abbreviateUnits("2 tablespoons")).toBe("2 tbsp");
+    expect(abbreviateUnits("1 tablespoon")).toBe("1 tbsp");
+    expect(abbreviateUnits("3 teaspoons")).toBe("3 tsp");
+    expect(abbreviateUnits("2 cups")).toBe("2 c");
+    expect(abbreviateUnits("3 pounds")).toBe("3 lb");
+    expect(abbreviateUnits("200 grams")).toBe("200 g");
+    expect(abbreviateUnits("2 fluid ounces")).toBe("2 fl oz");
+    expect(abbreviateUnits("8 ounces")).toBe("8 oz");
+    expect(abbreviateUnits("2 quarts")).toBe("2 qt");
+    expect(abbreviateUnits("1 pint")).toBe("1 pt");
+    expect(abbreviateUnits("1 gallon")).toBe("1 gal");
+  });
+
+  it("normalizes handwritten-card variants with trailing periods", () => {
+    expect(abbreviateUnits("4 tbls.")).toBe("4 tbsp");
+    expect(abbreviateUnits("2 tbs.")).toBe("2 tbsp");
+    expect(abbreviateUnits("1 teas.")).toBe("1 tsp");
+    expect(abbreviateUnits("2 cups.")).toBe("2 c");
+    expect(abbreviateUnits("1/4 tsp.")).toBe("1/4 tsp");
+    expect(abbreviateUnits("8 oz.")).toBe("8 oz");
+    expect(abbreviateUnits("1/2 c.")).toBe("1/2 c");
+  });
+
+  it("keeps compound words intact (word boundaries + ordering)", () => {
+    expect(abbreviateUnits("1 1/2 kilograms")).toBe("1 1/2 kg");
+    expect(abbreviateUnits("300 milliliters")).toBe("300 ml");
+    expect(abbreviateUnits("2 millilitres")).toBe("2 ml");
+    expect(abbreviateUnits("3 liters")).toBe("3 L");
+    expect(abbreviateUnits("1 litre")).toBe("1 L");
+  });
+
+  it("never touches single letters or unknown words", () => {
+    expect(abbreviateUnits("2 T butter")).toBe("2 T butter");
+    expect(abbreviateUnits("1 stick")).toBe("1 stick");
+    expect(abbreviateUnits("2 sm. onions")).toBe("2 sm. onions");
+  });
+});
+
+describe("transformQuantity unit abbreviation", () => {
+  const view = (units: "original" | "metric" | "imperial") => ({
+    units,
+    numbers: "original" as const,
+    scale: 1,
+    labels: "full" as const,
+  });
+
+  it("abbreviates only when a units preference is selected", () => {
+    expect(transformQuantity("2 tablespoons (30 ml)", view("imperial"))).toBe("2 tbsp");
+    expect(transformQuantity("2 tablespoons (30 ml)", view("metric"))).toBe("30 ml");
+    expect(transformQuantity("2 tablespoons (30 ml)", view("original"))).toBe(
+      "2 tablespoons (30 ml)",
+    );
+  });
+
+  it("composes with scaling", () => {
+    expect(transformQuantity("2 tablespoons (30 ml)", { ...view("imperial"), scale: 2 })).toBe(
+      "4 tbsp",
+    );
+  });
+});
 
 describe("transformNumbers", () => {
   it("is the identity at 1x with original style", () => {
