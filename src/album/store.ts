@@ -44,6 +44,50 @@ export interface CardRecord {
   updatedAt: number;
 }
 
+// Photos are persisted as INLINE bytes, not Blobs: Safari stores large IDB
+// blobs as file references whose handles go stale under memory pressure
+// ("The object can not be found here." — broken review photos, failed book
+// generation). ArrayBuffers are structured-cloned by value, so a Blob
+// reconstructed from them at read time can never go stale.
+interface PackedBlob {
+  packed: true;
+  type: string;
+  bytes: ArrayBuffer;
+}
+
+type StoredMedia = Blob | PackedBlob;
+
+type StoredCard = Omit<CardRecord, "image" | "thumb"> & {
+  image: StoredMedia;
+  thumb: StoredMedia;
+};
+
+function isPacked(value: StoredMedia): value is PackedBlob {
+  return (value as PackedBlob)?.packed === true;
+}
+
+async function packMedia(blob: Blob): Promise<StoredMedia> {
+  try {
+    return { packed: true, type: blob.type, bytes: await blob.arrayBuffer() };
+  } catch {
+    // Reading a legacy stale blob mid-migration failed — keep it as-is
+    // (no worse than before; a later update retries).
+    return blob;
+  }
+}
+
+function unpackMedia(value: StoredMedia): Blob {
+  return isPacked(value) ? new Blob([value.bytes], { type: value.type }) : value;
+}
+
+async function packCard(card: CardRecord): Promise<StoredCard> {
+  return { ...card, image: await packMedia(card.image), thumb: await packMedia(card.thumb) };
+}
+
+function unpackCard(stored: StoredCard): CardRecord {
+  return { ...stored, image: unpackMedia(stored.image), thumb: unpackMedia(stored.thumb) };
+}
+
 const DB_NAME = "recipe-tabulator";
 const DB_VERSION = 1;
 
@@ -125,7 +169,7 @@ export async function deleteAlbum(id: string): Promise<void> {
   const tx = db.transaction(["albums", "cards"], "readwrite");
   tx.objectStore("albums").delete(id);
   const index = tx.objectStore("cards").index("byAlbum");
-  const cards = await wait<CardRecord[]>(index.getAll(id));
+  const cards = await wait<StoredCard[]>(index.getAll(id));
   for (const card of cards) tx.objectStore("cards").delete(card.id);
   await done(tx);
 }
@@ -150,9 +194,10 @@ export async function addCard(
   };
   album.cardOrder.push(card.id);
   album.updatedAt = Date.now();
+  const stored = await packCard(card);
   const db = await openDb();
   const tx = db.transaction(["albums", "cards"], "readwrite");
-  tx.objectStore("cards").add(card);
+  tx.objectStore("cards").add(stored);
   tx.objectStore("albums").put(album);
   await done(tx);
   return card;
@@ -160,24 +205,29 @@ export async function addCard(
 
 export async function getCard(id: string): Promise<CardRecord | undefined> {
   const db = await openDb();
-  return wait(db.transaction("cards").objectStore("cards").get(id));
+  const stored = await wait<StoredCard | undefined>(
+    db.transaction("cards").objectStore("cards").get(id),
+  );
+  return stored && unpackCard(stored);
 }
 
 /** All cards of an album, in the album's cardOrder. */
 export async function getCards(album: AlbumRecord): Promise<CardRecord[]> {
   const db = await openDb();
-  const rows = await wait<CardRecord[]>(
+  const rows = await wait<StoredCard[]>(
     db.transaction("cards").objectStore("cards").index("byAlbum").getAll(album.id),
   );
-  const byId = new Map(rows.map((c) => [c.id, c]));
+  const byId = new Map(rows.map((c) => [c.id, unpackCard(c)]));
   return album.cardOrder.map((id) => byId.get(id)).filter((c): c is CardRecord => !!c);
 }
 
 export async function updateCard(card: CardRecord): Promise<void> {
   card.updatedAt = Date.now();
+  // Packing here also migrates legacy Blob-format cards on their next update.
+  const stored = await packCard(card);
   const db = await openDb();
   const tx = db.transaction("cards", "readwrite");
-  tx.objectStore("cards").put(card);
+  tx.objectStore("cards").put(stored);
   await done(tx);
 }
 

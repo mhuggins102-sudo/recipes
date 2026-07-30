@@ -3,6 +3,7 @@ import { createAlbumQueue, ALBUM_MAX_CARDS, type AlbumQueue } from "../album/que
 import {
   addCard,
   deleteCard,
+  getCard,
   getCards,
   updateAlbum,
   updateCard,
@@ -100,8 +101,12 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
     return url;
   }
 
-  /** A photo <img> that re-mints its blob URL once if the browser drops it. */
-  function photoImg(key: string, blob: Blob, className?: string): HTMLImageElement {
+  /** A photo <img> that heals itself if the browser drops its blob. The
+      retry re-READS the card from IndexedDB — a fresh read returns a fresh
+      handle, the working workaround for WebKit's stale file-backed blobs
+      in legacy (pre-inline-bytes) albums. */
+  function photoImg(card: CardRecord, kind: "thumb" | "image", className?: string): HTMLImageElement {
+    const key = `${card.id}:${kind}`;
     const img = el("img", className) as HTMLImageElement;
     img.decoding = "async";
     let retried = false;
@@ -113,11 +118,14 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
         URL.revokeObjectURL(old);
         blobUrls.delete(key);
       }
-      setTimeout(() => {
-        img.src = cachedUrl(key, blob);
-      }, 400);
+      void getCard(card.id).then((fresh) => {
+        const blob = fresh?.[kind] ?? card[kind];
+        setTimeout(() => {
+          img.src = cachedUrl(key, blob);
+        }, 300);
+      });
     });
-    img.src = cachedUrl(key, blob);
+    img.src = cachedUrl(key, card[kind]);
     return img;
   }
 
@@ -223,7 +231,7 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
     for (const card of cards) {
       const cell = el("figure", "album-card");
       if (card.id === selectedId) cell.classList.add("selected");
-      const img = photoImg(`${card.id}:thumb`, card.thumb);
+      const img = photoImg(card, "thumb");
       img.alt = card.recipe?.title ?? "recipe card";
       const badge = el(
         "figcaption",
@@ -292,7 +300,7 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
 
     const heading = el("h2", undefined, "Review against the card");
     const pane = el("div", "review-pane");
-    const photo = photoImg(`${card.id}:image`, card.image, "review-photo");
+    const photo = photoImg(card, "image", "review-photo");
     photo.alt = "original recipe card";
     const work = el("div", "review-work");
 

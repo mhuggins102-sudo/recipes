@@ -68,6 +68,29 @@ test("album: intake, convert, review-edit persists, cookbook PDF", async ({ page
   await expect(page.locator(".album-card")).toHaveCount(3);
   await expect(page.locator(".album-progress")).toHaveText(/3 of 3 converted/, { timeout: 30_000 });
 
+  // Photos persist as INLINE bytes, not Blobs — Safari's file-backed IDB
+  // blobs go stale under memory pressure (broken photos, failed generation).
+  const storedShape = await page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const open = indexedDB.open("recipe-tabulator");
+        open.onsuccess = () => {
+          const req = open.result.transaction("cards").objectStore("cards").getAll();
+          req.onsuccess = () => {
+            const card = req.result[0];
+            resolve({
+              packed: card.image?.packed === true && card.thumb?.packed === true,
+              inlineBytes: card.image?.bytes instanceof ArrayBuffer,
+              notBlob: !(card.image instanceof Blob),
+            });
+          };
+          req.onerror = () => reject(req.error);
+        };
+        open.onerror = () => reject(open.error);
+      }),
+  );
+  expect(storedShape).toEqual({ packed: true, inlineBytes: true, notBlob: true });
+
   // Review the first card: photo + table + instructions, edit a quantity.
   await page.locator(".album-card").first().click();
   await expect(page.locator(".review-pane table.recipe-table")).toBeVisible();
