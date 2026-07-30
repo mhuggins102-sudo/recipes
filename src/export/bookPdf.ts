@@ -2,7 +2,6 @@ import { toCanvas } from "html-to-image";
 import type { RecipeTree } from "../../shared/schema";
 import type { AlbumRecord, CardRecord } from "../album/store";
 import { applyView, type ViewOptions } from "../quantity";
-import { renderInstructions } from "../render/instructions";
 import { renderTable } from "../render/table";
 import { INITIAL_VIEW } from "../ui/viewBar";
 import {
@@ -48,11 +47,23 @@ function mountStage(widthPx: number): HTMLDivElement {
   return stage;
 }
 
-async function rasterize(writer: PdfWriter, el: HTMLElement): Promise<number> {
+interface Rasterized {
+  image: number;
+  /** Natural raster size in CSS px (canvas px / pixelRatio). */
+  wPx: number;
+  hPx: number;
+}
+
+async function rasterize(writer: PdfWriter, el: HTMLElement): Promise<Rasterized> {
   const canvas = await toCanvas(el, RASTER_OPTIONS);
-  const index = await writer.addRgb(canvasRgb(canvas), canvas.width, canvas.height);
+  const image = await writer.addRgb(canvasRgb(canvas), canvas.width, canvas.height);
+  const result = {
+    image,
+    wPx: canvas.width / RASTER_OPTIONS.pixelRatio,
+    hPx: canvas.height / RASTER_OPTIONS.pixelRatio,
+  };
   canvas.width = 0; // release the bitmap eagerly — books rasterize many blocks
-  return index;
+  return result;
 }
 
 function headingEl(recipe: RecipeTree, continued: boolean): HTMLElement {
@@ -66,7 +77,13 @@ function tableEl(m: MeasuredRecipe): HTMLElement {
   return renderTable(applyView(m.recipe, m.view), m.view.labels);
 }
 
-function instructionsEl(m: MeasuredRecipe, from: number, to: number): HTMLElement {
+/**
+ * Book-stage instructions with EXPLICIT number spans instead of native <ol>
+ * markers: Safari mispositions list markers inside html-to-image's SVG
+ * foreignObject rendering (numbers came out clipped at the left edge of the
+ * page), and plain text nodes rasterize identically in every browser.
+ */
+function instructionsEl(recipe: RecipeTree, from: number, to: number): HTMLElement {
   const section = document.createElement("section");
   section.className = "instructions";
   if (from === 0) {
@@ -74,14 +91,19 @@ function instructionsEl(m: MeasuredRecipe, from: number, to: number): HTMLElemen
     h3.textContent = "Instructions";
     section.appendChild(h3);
   }
-  const ol = document.createElement("ol");
-  ol.start = from + 1;
-  for (const step of (m.recipe.instructions ?? []).slice(from, to)) {
+  const ul = document.createElement("ul");
+  (recipe.instructions ?? []).slice(from, to).forEach((step, i) => {
     const li = document.createElement("li");
-    li.textContent = step;
-    ol.appendChild(li);
-  }
-  section.appendChild(ol);
+    const num = document.createElement("span");
+    num.className = "num";
+    num.textContent = `${from + i + 1}.`;
+    const txt = document.createElement("span");
+    txt.className = "txt";
+    txt.textContent = step;
+    li.append(num, txt);
+    ul.appendChild(li);
+  });
+  section.appendChild(ul);
   return section;
 }
 
@@ -140,7 +162,10 @@ function measureRecipe(card: CardRecord): MeasuredRecipe {
   try {
     const table = renderTable(applyView(recipe, view), view.labels);
     const heading = headingEl(recipe, true);
-    const instr = renderInstructions(recipe);
+    // Measure the exact markup the raster pass renders (explicit-number rows).
+    const instr = recipe.instructions?.length
+      ? instructionsEl(recipe, 0, recipe.instructions.length)
+      : null;
     stage.append(heading, table);
     if (instr) stage.appendChild(instr);
 
@@ -250,6 +275,7 @@ export async function exportCookbookPdf(
         const stage = mountStage(
           placed.kind === "table" && m ? Math.ceil(Math.max(m.tableW, STAGE_WIDTH_PX)) : STAGE_WIDTH_PX,
         );
+        let raster: Rasterized;
         try {
           if (placed.kind === "title") stage.appendChild(titlePageEl(album));
           else if (placed.kind === "toc") stage.appendChild(tocEl(tocEntries, placed.from!, placed.to!));
@@ -257,14 +283,21 @@ export async function exportCookbookPdf(
             stage.appendChild(headingEl(m.recipe, placed.continued ?? false));
           else if (placed.kind === "table" && m) stage.appendChild(tableEl(m));
           else if (placed.kind === "instructions" && m)
-            stage.appendChild(instructionsEl(m, placed.from!, placed.to!));
-          image = await rasterize(writer, stage);
+            stage.appendChild(instructionsEl(m.recipe, placed.from!, placed.to!));
+          raster = await rasterize(writer, stage);
         } finally {
           stage.remove();
         }
+        image = raster.image;
         if (placed.kind === "table" && m) {
           w = m.tableWpt;
           h = m.tableHpt;
+        } else {
+          // Draw at the raster's natural size (top-anchored in its slot) —
+          // the reserved slot includes inter-item spacing the DOM doesn't,
+          // and drawing into it verbatim would stretch the text vertically.
+          w = Math.min(placed.w, raster.wPx * PT_PER_PX);
+          h = Math.min(placed.h, raster.hPx * PT_PER_PX);
         }
       }
       placements.push({

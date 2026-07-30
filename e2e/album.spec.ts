@@ -85,11 +85,18 @@ test("album: intake, convert, review-edit persists, cookbook PDF", async ({ page
   await page.locator(".album-card").first().click();
   await expect(page.locator(".review-pane td.ingredient .qty").first()).toHaveText(/9 cups/);
 
-  // Approve flow advances through unreviewed cards.
-  await page.click('button:has-text("Looks good")');
-  await expect(page.locator(".album-card .badge").first()).toHaveText(/reviewed/);
+  // Generation is gated until every included card has been reviewed.
+  await expect(page.locator('button:has-text("Generate cookbook PDF")')).toBeDisabled();
+  await expect(page.locator('button:has-text("Review next")')).toBeVisible();
 
-  // Build the book: title + TOC + 3 recipe pages = /Count 5.
+  // Approve flow advances through unreviewed cards; three approvals clear the gate.
+  for (let i = 0; i < 3; i++) {
+    await page.click('button:has-text("Looks good")');
+  }
+  await expect(page.locator(".album-card .badge").first()).toHaveText(/reviewed/);
+  await expect(page.locator('button:has-text("Generate cookbook PDF")')).toBeEnabled();
+
+  // Build the book: title + TOC + 3 one-page recipes = /Count 5.
   await page.fill(".album-author", "Test Author");
   const [download] = await Promise.all([
     page.waitForEvent("download"),

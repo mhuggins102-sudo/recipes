@@ -523,6 +523,11 @@ input.album-author {
   color: #c0392b;
 }
 
+.album-card .badge.review {
+  color: #a06a00;
+  font-weight: bold;
+}
+
 .album-card .del {
   position: absolute;
   top: 2px;
@@ -629,13 +634,29 @@ input.album-author {
   color: var(--accent);
 }
 
-.book-stage .instructions ol {
+/* Explicit-number rows (no native list markers — Safari clips those when
+   html-to-image rasterizes through SVG foreignObject). */
+.book-stage .instructions ul {
+  list-style: none;
   margin: 0;
-  padding-left: 34px;
+  padding: 0;
 }
 
 .book-stage .instructions li {
+  display: flex;
   margin: 0;
+}
+
+.book-stage .instructions .num {
+  flex: none;
+  width: 52px;
+  text-align: right;
+  padding-right: 14px;
+}
+
+.book-stage .instructions .txt {
+  flex: 1;
+  min-width: 0;
 }
 
 .book-title-page {

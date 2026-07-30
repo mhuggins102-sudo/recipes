@@ -71,9 +71,21 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
       renderQueueState();
       if (selectedId === card.id && card.state === "done") renderReview();
       renderBuilder();
+      if (card.state === "done") autoSelectUnreviewed();
     },
     () => renderQueueState(),
   );
+
+  /** Land the user in review as soon as there's something to check. */
+  function autoSelectUnreviewed(): void {
+    if (selectedId) return;
+    const next = cards.find((c) => c.state === "done" && c.recipe && !c.reviewed);
+    if (next) {
+      selectedId = next.id;
+      renderGrid();
+      renderReview();
+    }
+  }
 
   function thumbUrl(blob: Blob): string {
     const url = URL.createObjectURL(blob);
@@ -133,7 +145,13 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
     queue.kick();
   });
   const grid = el("div", "album-grid");
-  intake.append(drop, fileInput, intakeError, progress, resume, grid);
+  const gridHint = el(
+    "p",
+    "hint",
+    "Click a card to check its conversion against the photo — every card in the book needs a quick review before the cookbook can be generated.",
+  );
+  gridHint.style.display = "none";
+  intake.append(drop, fileInput, intakeError, progress, resume, grid, gridHint);
 
   async function addFiles(files: File[]): Promise<void> {
     intakeError.textContent = "";
@@ -173,6 +191,7 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
 
   function renderGrid(): void {
     grid.innerHTML = "";
+    gridHint.style.display = cards.length ? "" : "none";
     for (const card of cards) {
       const cell = el("figure", "album-card");
       if (card.id === selectedId) cell.classList.add("selected");
@@ -184,7 +203,10 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
         `badge ${card.state}`,
         phaseText.get(card.id) ?? STATE_BADGE[card.state],
       );
-      if (card.state === "done" && card.reviewed) badge.textContent = "✓ reviewed";
+      if (card.state === "done") {
+        badge.textContent = card.reviewed ? "✓ reviewed" : "needs review";
+        badge.classList.toggle("review", !card.reviewed);
+      }
       cell.append(img, badge);
       if (card.state === "error") {
         const retry = button("ghost", "Retry");
@@ -362,6 +384,7 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
       include.addEventListener("change", () => {
         card.included = include.checked;
         void updateCard(card);
+        renderBuilder(); // review gating depends on which cards are included
       });
       const title = el("span", "builder-title", card.recipe.title);
       const warnings: string[] = [];
@@ -390,8 +413,21 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
       list.appendChild(li);
     });
 
+    // Every included card must be reviewed before the book can be generated —
+    // an unchecked conversion in a printed book is the costly kind of mistake.
+    const needingReview = cards.filter(
+      (c) => c.state === "done" && c.recipe && c.included && !c.reviewed,
+    );
+
     const generate = button("primary", "Generate cookbook PDF");
+    generate.disabled = needingReview.length > 0;
+    if (needingReview.length) {
+      generate.title = "Review every included card first";
+    }
     const status = el("span", "status");
+    if (needingReview.length) {
+      status.textContent = `${needingReview.length} card${needingReview.length === 1 ? "" : "s"} still need${needingReview.length === 1 ? "s" : ""} review.`;
+    }
     generate.addEventListener("click", async () => {
       generate.disabled = true;
       status.textContent = "Building the book — this can take a minute…";
@@ -407,6 +443,16 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
     });
 
     const actions = el("div", "actions");
+    if (needingReview.length) {
+      const reviewNext = button("primary", `Review next — ${needingReview.length} to go →`);
+      reviewNext.addEventListener("click", () => {
+        selectedId = needingReview[0].id;
+        renderGrid();
+        renderReview();
+        review.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      actions.append(reviewNext);
+    }
     actions.append(generate, status);
     builder.append(authorInput, tocLabel, list, actions);
   }
@@ -420,6 +466,7 @@ export function createAlbumView(album: AlbumRecord): AlbumView {
     renderGrid();
     renderQueueState();
     renderBuilder();
+    autoSelectUnreviewed();
     queue.kick(); // resume any queued cards from a previous visit
   });
 

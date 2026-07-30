@@ -55,7 +55,7 @@ describe("PdfWriter", () => {
   it("passes JPEG bytes through DCTDecode unmodified", async () => {
     const { buf, text, jpegBytes } = await build();
     const m = text.match(
-      /<< \/Type \/XObject \/Subtype \/Image \/Width 10 \/Height 8 \/ColorSpace \/DeviceRGB \/BitsPerComponent 8 \/Filter \/DCTDecode \/Length (\d+) >>\nstream\n/,
+      /<< \/Type \/XObject \/Subtype \/Image \/Width 10 \/Height 8 \/ColorSpace \/DeviceRGB \/BitsPerComponent 8 \/Interpolate true \/Filter \/DCTDecode \/Length (\d+) >>\nstream\n/,
     )!;
     expect(Number(m[1])).toBe(jpegBytes.length);
     const start = m.index! + m[0].length;
