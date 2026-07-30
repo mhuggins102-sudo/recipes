@@ -163,6 +163,9 @@ const UNIT_ABBREVIATIONS: [RegExp, string][] = [
   [/\bquarts?\b\.?/gi, "qt"],
   [/\bpints?\b\.?/gi, "pt"],
   [/\bgallons?\b\.?/gi, "gal"],
+  // Pluralized short forms singularize ("lbs." → "lb") — abbreviations
+  // don't pluralize. (Not "gs"/"cs": too ambiguous to touch.)
+  [/\b(tbsp|tsp|oz|lb|kg|ml|qt|pt|gal)s\b\.?/gi, "$1"],
   // Already-short forms just lose a trailing period ("tsp." → "tsp").
   [/\b(tbsp|tsp|oz|lb|kg|g|ml|qt|pt|gal|c)\b\./gi, "$1"],
 ];

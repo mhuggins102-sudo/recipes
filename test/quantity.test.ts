@@ -35,6 +35,15 @@ describe("abbreviateUnits", () => {
     expect(abbreviateUnits("1/2 c.")).toBe("1/2 c");
   });
 
+  it("singularizes pluralized short forms", () => {
+    expect(abbreviateUnits("2 lbs.")).toBe("2 lb");
+    expect(abbreviateUnits("2 lbs")).toBe("2 lb");
+    expect(abbreviateUnits("3 ozs.")).toBe("3 oz");
+    expect(abbreviateUnits("2 tsps")).toBe("2 tsp");
+    expect(abbreviateUnits("2 Tbsps.")).toBe("2 Tbsp");
+    expect(abbreviateUnits("3 qts")).toBe("3 qt");
+  });
+
   it("keeps compound words intact (word boundaries + ordering)", () => {
     expect(abbreviateUnits("1 1/2 kilograms")).toBe("1 1/2 kg");
     expect(abbreviateUnits("300 milliliters")).toBe("300 ml");
