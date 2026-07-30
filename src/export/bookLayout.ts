@@ -17,6 +17,11 @@ export const PT_PER_PX = CONTENT.w / STAGE_WIDTH_PX;
 export const GAP = 18;
 /** The card photo may take at most this fraction of the content height. */
 const PHOTO_MAX_FRACTION = 0.45;
+/** Never magnify a photo below this print resolution — small source photos
+    render smaller (and therefore sharper) instead of huge and soft. */
+export const PHOTO_TARGET_DPI = 150;
+/** Smallest photo height worth printing; below this, spill instead. */
+export const PHOTO_MIN_H = 90; // 1.25 in
 
 export type PlacementKind = "title" | "toc" | "heading" | "photo" | "table" | "instructions";
 
@@ -74,10 +79,17 @@ export function pageContentLeft(pageNumber: number): number {
   return pageNumber % 2 === 1 ? MARGIN.inner : MARGIN.outer;
 }
 
-/** Fit the photo into content-width × 45% content-height, centered, aspect kept. */
-export function photoBox(photo: { w: number; h: number }): { x: number; w: number; h: number } {
-  const maxH = CONTENT.h * PHOTO_MAX_FRACTION;
-  const scale = Math.min(CONTENT.w / photo.w, maxH / photo.h);
+/**
+ * Fit the photo (source size in px) under maxH, centered, aspect kept.
+ * Width is capped by the content box AND by PHOTO_TARGET_DPI, so a low-res
+ * photo is never blown up past the point of printing soft.
+ */
+export function photoBox(
+  photo: { w: number; h: number },
+  maxH = CONTENT.h * PHOTO_MAX_FRACTION,
+): { x: number; w: number; h: number } {
+  const maxW = Math.min(CONTENT.w, (photo.w * 72) / PHOTO_TARGET_DPI);
+  const scale = Math.min(maxW / photo.w, maxH / photo.h);
   const w = photo.w * scale;
   const h = photo.h * scale;
   return { x: (CONTENT.w - w) / 2, w, h };
@@ -122,22 +134,33 @@ export function planBook(inputs: BookInputs): BookPlan {
 
 function planRecipe(pages: PagePlan[], m: RecipeMeasure, r: number): void {
   const tableH = Math.min(m.tableH, CONTENT.h);
+  const instrTotal = m.itemHeights.length
+    ? m.instrHeaderH + m.itemHeights.reduce((a, b) => a + b, 0)
+    : 0;
   let placements: PlannedPlacement[] = [];
   let y = 0;
 
   if (m.photo) {
-    const box = photoBox(m.photo);
-    const together = box.h + GAP + tableH <= CONTENT.h;
-    if (together) {
+    // Start from the ceiling size (45% of page, DPI-capped), then shrink the
+    // photo — down to a floor — so photo + table + ALL instructions share one
+    // page whenever possible.
+    let box = photoBox(m.photo);
+    const remaining = CONTENT.h - (GAP + tableH + (instrTotal ? GAP + instrTotal : 0));
+    if (box.h > remaining) {
+      box = photoBox(m.photo, Math.max(remaining, PHOTO_MIN_H));
+    }
+    if (box.h + GAP + tableH <= CONTENT.h) {
       placements.push({ kind: "photo", recipe: r, x: box.x, y, w: box.w, h: box.h });
       y += box.h + GAP;
     } else {
-      // Photo page (with a title heading, since the table carries the title
-      // elsewhere), then the table starts fresh on the next page.
+      // Even the floored photo can't share a page with the table: give the
+      // photo its own page at ceiling size (with a title heading, since the
+      // table carries the title elsewhere); the table starts fresh next page.
+      const full = photoBox(m.photo);
       pages.push({
         placements: [
           { kind: "heading", recipe: r, x: 0, y: 0, w: CONTENT.w, h: m.headingH },
-          { kind: "photo", recipe: r, x: box.x, y: m.headingH + GAP, w: box.w, h: box.h },
+          { kind: "photo", recipe: r, x: full.x, y: m.headingH + GAP, w: full.w, h: full.h },
         ],
       });
     }

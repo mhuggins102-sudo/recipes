@@ -32,6 +32,15 @@ describe("photoBox", () => {
     const box = photoBox({ w: 4000, h: 1000 });
     expect(box.w).toBeCloseTo(CONTENT.w);
   });
+
+  it("never magnifies a low-res photo below the target print DPI", () => {
+    // A 443 px-wide card (real case from the first printed book) must not be
+    // blown up to full content width — cap it at PHOTO_TARGET_DPI.
+    const box = photoBox({ w: 443, h: 266 });
+    expect(box.w).toBeCloseTo((443 * 72) / 150);
+    const effectiveDpi = 443 / (box.w / 72);
+    expect(effectiveDpi).toBeCloseTo(150);
+  });
 });
 
 describe("pageContentLeft", () => {
@@ -76,15 +85,50 @@ describe("planBook", () => {
     expect(slices[slices.length - 1].to).toBe(items.length);
   });
 
-  it("moves a tall table to its own page, leaving the photo with a heading", () => {
+  it("shrinks the photo so photo + table + instructions share one page", () => {
+    // Ceiling-size photo (291.6pt) would overflow; the fit leaves 148pt.
     const plan = planBook({
       toc: false,
       tocEntryH: 30,
       tocHeaderH: 48,
-      recipes: [recipe({ photo: { w: 1000, h: 1000 }, tableH: 500 })],
+      recipes: [recipe({ itemHeights: Array.from({ length: 8 }, () => 30) })],
+    });
+    expect(plan.pages).toHaveLength(2);
+    const page = plan.pages[1].placements;
+    expect(kinds(page)).toEqual(["photo", "table", "instructions"]);
+    const expectedPhotoH = CONTENT.h - (GAP + 200 + GAP + (24 + 8 * 30));
+    expect(page[0].h).toBeCloseTo(expectedPhotoH);
+    expect(page[2].to).toBe(8); // every instruction made it onto the page
+    for (const p of page) expect(p.y + p.h).toBeLessThanOrEqual(CONTENT.h + 0.001);
+  });
+
+  it("floors the photo beside a tall table and spills instructions", () => {
+    const plan = planBook({
+      toc: false,
+      tocEntryH: 30,
+      tocHeaderH: 48,
+      recipes: [recipe({ tableH: 500, itemHeights: Array.from({ length: 10 }, () => 30) })],
+    });
+    const page1 = plan.pages[1].placements;
+    expect(page1[0].kind).toBe("photo");
+    expect(page1[0].h).toBeCloseTo(90); // PHOTO_MIN_H floor
+    expect(page1[1].kind).toBe("table");
+    const cont = plan.pages[2].placements;
+    expect(cont[0].kind).toBe("heading");
+    expect(cont[0].continued).toBe(true);
+  });
+
+  it("moves a very tall table to its own page, leaving the photo with a heading", () => {
+    const plan = planBook({
+      toc: false,
+      tocEntryH: 30,
+      tocHeaderH: 48,
+      recipes: [recipe({ photo: { w: 1000, h: 1000 }, tableH: 600 })],
     });
     expect(kinds(plan.pages[1].placements)).toEqual(["heading", "photo"]);
     expect(plan.pages[1].placements[0].continued).toBeUndefined();
+    // The photo-only page uses the ceiling size, not the fit-shrunk one.
+    expect(plan.pages[1].placements[1].h).toBeCloseTo(CONTENT.h * 0.45);
     const tablePage = plan.pages[2].placements;
     expect(tablePage[0].kind).toBe("table");
     expect(tablePage[0].y).toBe(0);

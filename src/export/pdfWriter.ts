@@ -128,6 +128,8 @@ export class PdfWriter {
       push(
         `${n} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} ` +
           "/ColorSpace /DeviceRGB /BitsPerComponent 8 " +
+          // Photos get scaled at print time; ask viewers/printers to smooth.
+          `${image.filter === "DCTDecode" ? "/Interpolate true " : ""}` +
           `${image.filter ? `/Filter /${image.filter} ` : ""}/Length ${image.data.length} >>\nstream\n`,
       );
       push(image.data);
