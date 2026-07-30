@@ -14,6 +14,13 @@
   box-sizing: border-box;
 }
 
+html {
+  /* Mobile browsers "boost" text in wide blocks, randomly inflating table
+     cells and rasterized book pages generated on a phone — pin text size. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   background: var(--paper);
@@ -622,6 +629,12 @@ input.album-author {
   margin: 0;
   font-size: 30px;
   color: var(--accent);
+}
+
+/* Natural width in the book: narrow recipes get narrow tables, which can
+   then sit beside their instructions instead of above them. */
+.book-stage table.recipe-table {
+  width: auto;
 }
 
 .book-stage .recipe-table .title-row th {

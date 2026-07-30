@@ -3,20 +3,33 @@ import {
   CONTENT,
   GAP,
   MARGIN,
+  PHOTO_MIN_H,
   pageContentLeft,
   photoBox,
   planBook,
+  type InstrMeasure,
   type RecipeMeasure,
 } from "../src/export/bookLayout";
 
+const instr = (n: number, itemH = 20, headerH = 24): InstrMeasure => ({
+  headerH: n ? headerH : 0,
+  itemHeights: Array.from({ length: n }, () => itemH),
+});
+
+const total = (im: InstrMeasure) =>
+  im.itemHeights.length ? im.headerH + im.itemHeights.reduce((a, b) => a + b, 0) : 0;
+
 const recipe = (over: Partial<RecipeMeasure> = {}): RecipeMeasure => ({
   photo: { w: 1500, h: 1000 },
+  tableW: CONTENT.w,
   tableH: 200,
   headingH: 30,
-  instrHeaderH: 24,
-  itemHeights: [20, 20, 20],
+  stacked: instr(3),
   ...over,
 });
+
+const plan1 = (r: RecipeMeasure) =>
+  planBook({ toc: false, tocEntryH: 30, tocHeaderH: 48, recipes: [r] });
 
 const kinds = (placements: { kind: string }[]) => placements.map((p) => p.kind);
 
@@ -41,6 +54,11 @@ describe("photoBox", () => {
     const effectiveDpi = 443 / (box.w / 72);
     expect(effectiveDpi).toBeCloseTo(150);
   });
+
+  it("keeps the 45% ceiling even when offered more room", () => {
+    const box = photoBox({ w: 1000, h: 2000 }, CONTENT.h);
+    expect(box.h).toBeCloseTo(CONTENT.h * 0.45);
+  });
 });
 
 describe("pageContentLeft", () => {
@@ -51,100 +69,104 @@ describe("pageContentLeft", () => {
   });
 });
 
-describe("planBook", () => {
-  it("fits a typical recipe on one page after the title page", () => {
-    const plan = planBook({ toc: false, tocEntryH: 30, tocHeaderH: 48, recipes: [recipe()] });
-    expect(plan.pages).toHaveLength(2);
-    expect(kinds(plan.pages[0].placements)).toEqual(["title"]);
-    expect(kinds(plan.pages[1].placements)).toEqual(["photo", "table", "instructions"]);
-    expect(plan.recipeStartPage).toEqual([2]);
-    // Everything stays inside the content box.
-    for (const p of plan.pages[1].placements) {
-      expect(p.y + p.h).toBeLessThanOrEqual(CONTENT.h + 0.001);
-    }
-  });
-
-  it("spills long instructions to a continued page, never splitting an item", () => {
-    const items = Array.from({ length: 40 }, () => 30);
-    const plan = planBook({
-      toc: false,
-      tocEntryH: 30,
-      tocHeaderH: 48,
-      recipes: [recipe({ itemHeights: items })],
-    });
-    expect(plan.pages.length).toBeGreaterThan(2);
-    const cont = plan.pages[2].placements;
-    expect(cont[0].kind).toBe("heading");
-    expect(cont[0].continued).toBe(true);
-    // The two instruction slices cover all items exactly once, in order.
-    const slices = plan.pages
-      .flatMap((p) => p.placements)
-      .filter((p) => p.kind === "instructions");
-    expect(slices[0].from).toBe(0);
-    for (let i = 1; i < slices.length; i++) expect(slices[i].from).toBe(slices[i - 1].to);
-    expect(slices[slices.length - 1].to).toBe(items.length);
-  });
-
-  it("shrinks the photo so photo + table + instructions share one page", () => {
-    // Ceiling-size photo (291.6pt) would overflow; the fit leaves 148pt.
-    const plan = planBook({
-      toc: false,
-      tocEntryH: 30,
-      tocHeaderH: 48,
-      recipes: [recipe({ itemHeights: Array.from({ length: 8 }, () => 30) })],
-    });
+describe("planBook — stacked layout", () => {
+  it("orders the page table → instructions → photo, all on one page", () => {
+    const m = recipe({ tableW: 300 });
+    const plan = plan1(m);
     expect(plan.pages).toHaveLength(2);
     const page = plan.pages[1].placements;
-    expect(kinds(page)).toEqual(["photo", "table", "instructions"]);
-    const expectedPhotoH = CONTENT.h - (GAP + 200 + GAP + (24 + 8 * 30));
-    expect(page[0].h).toBeCloseTo(expectedPhotoH);
-    expect(page[2].to).toBe(8); // every instruction made it onto the page
+    expect(kinds(page)).toEqual(["table", "instructions", "photo"]);
+    const [table, instrs, photo] = page;
+    expect(table.y).toBe(0);
+    expect(table.x).toBeCloseTo((CONTENT.w - 300) / 2); // narrow table centered
+    expect(instrs.y).toBeCloseTo(table.h + GAP);
+    expect(photo.y).toBeCloseTo(instrs.y + total(m.stacked) + GAP);
     for (const p of page) expect(p.y + p.h).toBeLessThanOrEqual(CONTENT.h + 0.001);
   });
 
-  it("floors the photo beside a tall table and spills instructions", () => {
-    const plan = planBook({
-      toc: false,
-      tocEntryH: 30,
-      tocHeaderH: 48,
-      recipes: [recipe({ tableH: 500, itemHeights: Array.from({ length: 10 }, () => 30) })],
-    });
-    const page1 = plan.pages[1].placements;
-    expect(page1[0].kind).toBe("photo");
-    expect(page1[0].h).toBeCloseTo(90); // PHOTO_MIN_H floor
-    expect(page1[1].kind).toBe("table");
+  it("shrinks the photo into the space left below the instructions", () => {
+    const m = recipe({ stacked: instr(8, 30) });
+    const plan = plan1(m);
+    expect(plan.pages).toHaveLength(2);
+    const photo = plan.pages[1].placements.at(-1)!;
+    expect(photo.kind).toBe("photo");
+    const photoTop = 200 + GAP + total(m.stacked) + GAP;
+    expect(photo.h).toBeLessThanOrEqual(CONTENT.h - photoTop + 0.001);
+    expect(photo.y + photo.h).toBeLessThanOrEqual(CONTENT.h + 0.001);
+  });
+
+  it("gives the photo its own page when no printable room remains", () => {
+    const m = recipe({ tableH: 600, stacked: instr(0) });
+    const plan = plan1(m); // 600 + GAP leaves < PHOTO_MIN_H
+    expect(plan.pages).toHaveLength(3);
+    expect(kinds(plan.pages[1].placements)).toEqual(["table"]);
+    const photoPage = plan.pages[2].placements;
+    expect(kinds(photoPage)).toEqual(["heading", "photo"]);
+    expect(photoPage[0].continued).toBe(true);
+    expect(photoPage[1].h).toBeCloseTo(CONTENT.h * 0.45); // ceiling size
+  });
+
+  it("spills long instructions to continued pages, photo at the very end", () => {
+    const m = recipe({ stacked: instr(40, 30) });
+    const plan = plan1(m);
+    expect(plan.pages.length).toBeGreaterThan(3);
     const cont = plan.pages[2].placements;
     expect(cont[0].kind).toBe("heading");
     expect(cont[0].continued).toBe(true);
-  });
-
-  it("moves a very tall table to its own page, leaving the photo with a heading", () => {
-    const plan = planBook({
-      toc: false,
-      tocEntryH: 30,
-      tocHeaderH: 48,
-      recipes: [recipe({ photo: { w: 1000, h: 1000 }, tableH: 600 })],
-    });
-    expect(kinds(plan.pages[1].placements)).toEqual(["heading", "photo"]);
-    expect(plan.pages[1].placements[0].continued).toBeUndefined();
-    // The photo-only page uses the ceiling size, not the fit-shrunk one.
-    expect(plan.pages[1].placements[1].h).toBeCloseTo(CONTENT.h * 0.45);
-    const tablePage = plan.pages[2].placements;
-    expect(tablePage[0].kind).toBe("table");
-    expect(tablePage[0].y).toBe(0);
+    // Slices cover every item exactly once, in order.
+    const slices = plan.pages.flatMap((p) => p.placements).filter((p) => p.kind === "instructions");
+    expect(slices[0].from).toBe(0);
+    for (let i = 1; i < slices.length; i++) expect(slices[i].from).toBe(slices[i - 1].to);
+    expect(slices.at(-1)!.to).toBe(40);
+    // The photo is the last placement of the recipe's final page.
+    const lastPage = plan.pages.at(-1)!.placements;
+    expect(lastPage.at(-1)!.kind).toBe("photo");
   });
 
   it("clamps a table taller than the page", () => {
-    const plan = planBook({
-      toc: false,
-      tocEntryH: 30,
-      tocHeaderH: 48,
-      recipes: [recipe({ photo: undefined, tableH: 2000, itemHeights: [] })],
-    });
+    const plan = plan1(recipe({ photo: undefined, tableH: 2000, stacked: instr(0) }));
     const table = plan.pages[1].placements.find((p) => p.kind === "table")!;
     expect(table.h).toBeLessThanOrEqual(CONTENT.h);
   });
+});
 
+describe("planBook — side-by-side layout", () => {
+  const sideRecipe = (over: Partial<RecipeMeasure> = {}): RecipeMeasure =>
+    recipe({
+      tableW: 220,
+      tableH: 300,
+      stacked: instr(5),
+      side: instr(5, 26),
+      sideColW: CONTENT.w - 220 - GAP,
+      ...over,
+    });
+
+  it("puts instructions beside a narrow table, photo below both", () => {
+    const m = sideRecipe();
+    const plan = plan1(m);
+    expect(plan.pages).toHaveLength(2);
+    const page = plan.pages[1].placements;
+    expect(kinds(page)).toEqual(["table", "instructions", "photo"]);
+    const [table, instrs, photo] = page;
+    expect(table.x).toBe(0); // left column
+    expect(table.y).toBe(0);
+    expect(instrs.y).toBe(0); // top-aligned beside the table
+    expect(instrs.x).toBeCloseTo(CONTENT.w - m.sideColW!);
+    expect(instrs.w).toBeCloseTo(m.sideColW!);
+    expect(instrs.to).toBe(5); // the whole list sits in the column
+    expect(photo.y).toBeCloseTo(Math.max(300, total(m.side!)) + GAP);
+  });
+
+  it("falls back to stacked when the side column would overflow the page", () => {
+    const m = sideRecipe({ side: instr(40, 30) });
+    const plan = plan1(m);
+    const page = plan.pages[1].placements;
+    expect(page[0].kind).toBe("table");
+    expect(page[0].x).toBeCloseTo((CONTENT.w - 220) / 2); // centered = stacked mode
+  });
+});
+
+describe("planBook — front matter", () => {
   it("paginates the TOC and offsets recipe start pages", () => {
     const recipes = Array.from({ length: 100 }, () => recipe());
     const plan = planBook({ toc: true, tocEntryH: 30, tocHeaderH: 48, recipes });
@@ -152,15 +174,13 @@ describe("planBook", () => {
     const tocPages = Math.ceil(100 / perPage);
     expect(plan.tocPages).toBe(tocPages);
     expect(plan.recipeStartPage[0]).toBe(1 + tocPages + 1);
-    // TOC slices cover every entry exactly once.
     const slices = plan.pages.flatMap((p) => p.placements).filter((p) => p.kind === "toc");
     expect(slices[0].from).toBe(0);
-    expect(slices[slices.length - 1].to).toBe(100);
+    expect(slices.at(-1)!.to).toBe(100);
   });
 
-  it("keeps the photo/table gap explicit", () => {
-    const plan = planBook({ toc: false, tocEntryH: 30, tocHeaderH: 48, recipes: [recipe()] });
-    const [photo, table] = plan.pages[1].placements;
-    expect(table.y).toBeCloseTo(photo.y + photo.h + GAP);
+  it("keeps a printable floor constant sane", () => {
+    expect(PHOTO_MIN_H).toBeGreaterThan(0);
+    expect(PHOTO_MIN_H).toBeLessThan(CONTENT.h);
   });
 });
