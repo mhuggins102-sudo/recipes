@@ -14,6 +14,7 @@ import {
   pageContentLeft,
   photoBox,
   planBook,
+  type InstrMeasure,
   type RecipeMeasure,
 } from "./bookLayout";
 import { RASTER_OPTIONS, slugify } from "./image";
@@ -28,14 +29,20 @@ interface MeasuredRecipe {
   card: CardRecord;
   recipe: RecipeTree;
   view: ViewOptions;
-  /** Natural table size in CSS px (width may exceed the stage for wide tables). */
-  tableW: number;
-  tableHNatural: number;
+  /** Natural table width in CSS px (raster stage width). */
+  tableWpx: number;
   /** Placed size in pt (aspect-fit to the content box). */
   tableWpt: number;
   tableHpt: number;
   measure: RecipeMeasure;
 }
+
+/** Side-by-side instructions become an option below this table width. */
+const SIDE_TABLE_MAX_FRACTION = 0.58;
+/** …and only when the instructions column keeps a readable width. */
+const SIDE_MIN_COL_PT = 150;
+/** Extra breathing room added per measured instruction item, pt. */
+const ITEM_SPACING_PT = 6;
 
 const TOC_TITLE = "Contents";
 
@@ -154,61 +161,83 @@ function tocEl(
   return div;
 }
 
-/** Measure one recipe's blocks on a live offscreen stage. */
+/** Measure an instructions block rendered at the given stage width. */
+function measureInstructions(recipe: RecipeTree, stageWidthPx: number): InstrMeasure {
+  if (!recipe.instructions?.length) return { headerH: 0, itemHeights: [] };
+  const stage = mountStage(stageWidthPx);
+  try {
+    const instr = instructionsEl(recipe, 0, recipe.instructions.length);
+    stage.appendChild(instr);
+    const headerH = (instr.querySelector("h3")?.getBoundingClientRect().height ?? 0) * PT_PER_PX;
+    const itemHeights = [...instr.querySelectorAll("li")].map(
+      (li) => li.getBoundingClientRect().height * PT_PER_PX + ITEM_SPACING_PT,
+    );
+    return { headerH, itemHeights };
+  } finally {
+    stage.remove();
+  }
+}
+
+/** Measure one recipe's blocks on live offscreen stages. */
 function measureRecipe(card: CardRecord): MeasuredRecipe {
   const recipe = card.recipe!;
   const view = card.view ?? { ...INITIAL_VIEW };
   const stage = mountStage(STAGE_WIDTH_PX);
+  let tableWpx: number;
+  let tableWpt: number;
+  let tableHpt: number;
+  let headingHpt: number;
   try {
+    // The book table renders at its natural width (width:auto in .book-stage),
+    // so narrow recipes get narrow tables instead of full-page ones.
     const table = renderTable(applyView(recipe, view), view.labels);
     const heading = headingEl(recipe, true);
-    // Measure the exact markup the raster pass renders (explicit-number rows).
-    const instr = recipe.instructions?.length
-      ? instructionsEl(recipe, 0, recipe.instructions.length)
-      : null;
     stage.append(heading, table);
-    if (instr) stage.appendChild(instr);
 
     const tableRect = table.getBoundingClientRect();
-    const tableW = Math.max(tableRect.width, table.scrollWidth);
-    const tableHNatural = tableRect.height;
-    // Aspect-fit the table into the content box (wide tables shrink).
-    let tableWpt = CONTENT.w;
-    let tableHpt = (tableHNatural / Math.max(tableW, STAGE_WIDTH_PX)) * CONTENT.w;
+    tableWpx = Math.max(tableRect.width, table.scrollWidth);
+    // Aspect-fit into the content box (wide tables shrink to fit).
+    tableWpt = Math.min(CONTENT.w, tableWpx * PT_PER_PX);
+    tableHpt = tableRect.height * PT_PER_PX * (tableWpt / (tableWpx * PT_PER_PX));
     if (tableHpt > CONTENT.h) {
-      tableWpt = (CONTENT.h / tableHpt) * CONTENT.w;
+      tableWpt = (CONTENT.h / tableHpt) * tableWpt;
       tableHpt = CONTENT.h;
     }
-
-    const itemHpts: number[] = [];
-    let instrHeaderHpt = 0;
-    if (instr) {
-      const h3 = instr.querySelector("h3");
-      instrHeaderHpt = (h3?.getBoundingClientRect().height ?? 0) * PT_PER_PX;
-      for (const li of instr.querySelectorAll("li")) {
-        itemHpts.push(li.getBoundingClientRect().height * PT_PER_PX);
-      }
-    }
-
-    return {
-      card,
-      recipe,
-      view,
-      tableW,
-      tableHNatural,
-      tableWpt,
-      tableHpt,
-      measure: {
-        photo: { w: card.imageW, h: card.imageH },
-        tableH: tableHpt,
-        headingH: heading.getBoundingClientRect().height * PT_PER_PX,
-        instrHeaderH: instrHeaderHpt,
-        itemHeights: itemHpts.map((h) => h + 6), // + item spacing in pt
-      },
-    };
+    headingHpt = heading.getBoundingClientRect().height * PT_PER_PX;
   } finally {
     stage.remove();
   }
+
+  const stacked = measureInstructions(recipe, STAGE_WIDTH_PX);
+
+  // Side-by-side instructions: only for narrow tables with a readable column.
+  let side: InstrMeasure | undefined;
+  let sideColW: number | undefined;
+  if (stacked.itemHeights.length && tableWpt <= CONTENT.w * SIDE_TABLE_MAX_FRACTION) {
+    const colW = CONTENT.w - tableWpt - GAP;
+    if (colW >= SIDE_MIN_COL_PT) {
+      sideColW = colW;
+      side = measureInstructions(recipe, Math.round(colW / PT_PER_PX));
+    }
+  }
+
+  return {
+    card,
+    recipe,
+    view,
+    tableWpx,
+    tableWpt,
+    tableHpt,
+    measure: {
+      photo: { w: card.imageW, h: card.imageH },
+      tableW: tableWpt,
+      tableH: tableHpt,
+      headingH: headingHpt,
+      stacked,
+      side,
+      sideColW,
+    },
+  };
 }
 
 /** Measure one TOC row and the TOC heading, from a representative sample. */
@@ -263,17 +292,21 @@ export async function exportCookbookPdf(
       let image: number;
       let w = placed.w;
       let h = placed.h;
-      let x = placed.x;
+      const x = placed.x;
       if (placed.kind === "photo" && m) {
+        // Draw at the PLAN's box — it may be smaller than the ceiling size
+        // (fit-to-page); drawing bigger is how photos once overlapped tables.
         image = photoIndex.get(m.card.id)!;
-        const box = photoBox({ w: m.card.imageW, h: m.card.imageH });
-        w = box.w;
-        h = box.h;
-        x = box.x;
       } else {
-        // Rasterize the block on a fresh stage (memory-friendly: one at a time).
+        // Rasterize the block on a fresh stage (memory-friendly: one at a
+        // time) at the width the plan reserved for it — instructions may be
+        // a side column, tables their natural width.
         const stage = mountStage(
-          placed.kind === "table" && m ? Math.ceil(Math.max(m.tableW, STAGE_WIDTH_PX)) : STAGE_WIDTH_PX,
+          placed.kind === "table" && m
+            ? Math.ceil(m.tableWpx)
+            : placed.kind === "instructions"
+              ? Math.round(placed.w / PT_PER_PX)
+              : STAGE_WIDTH_PX,
         );
         let raster: Rasterized;
         try {
@@ -296,8 +329,9 @@ export async function exportCookbookPdf(
           // Draw at the raster's natural size (top-anchored in its slot) —
           // the reserved slot includes inter-item spacing the DOM doesn't,
           // and drawing into it verbatim would stretch the text vertically.
-          w = Math.min(placed.w, raster.wPx * PT_PER_PX);
-          h = Math.min(placed.h, raster.hPx * PT_PER_PX);
+          const scale = Math.min(1, placed.w / (raster.wPx * PT_PER_PX));
+          w = raster.wPx * PT_PER_PX * scale;
+          h = Math.min(placed.h, raster.hPx * PT_PER_PX * scale);
         }
       }
       placements.push({
@@ -319,9 +353,4 @@ export async function exportCookbookPdf(
 export function photoPrintDpi(card: CardRecord): number {
   const box = photoBox({ w: card.imageW, h: card.imageH });
   return Math.round(card.imageW / (box.w / 72));
-}
-
-/** Table shrink factor for the book page — warn when small (dense recipes). */
-export function tableShrink(m: { tableW: number }): number {
-  return Math.min(1, STAGE_WIDTH_PX / Math.max(m.tableW, STAGE_WIDTH_PX));
 }
