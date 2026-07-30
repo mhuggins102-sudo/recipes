@@ -658,6 +658,12 @@ input.album-author {
 .book-stage .instructions li {
   display: flex;
   margin: 0;
+  /* Item spacing as padding, so measured rects match the rendered raster. */
+  padding-bottom: 8px;
+}
+
+.book-stage .instructions li:last-child {
+  padding-bottom: 0;
 }
 
 .book-stage .instructions .num {

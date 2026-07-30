@@ -10,8 +10,10 @@
 
 /** 8 × 10 in trim — wide enough for the engineered table at readable sizes. */
 export const PAGE = { w: 576, h: 720 };
-/** Mirrored margins: 0.75 in binding gutter, 0.5 in elsewhere. */
-export const MARGIN = { inner: 54, outer: 36, top: 36, bottom: 36 };
+/** Uniform 0.625 in side margins (owner-reviewed: consistent pages beat a
+    mirrored binding gutter). Same total as the old 0.75+0.5 mirror, so the
+    content box — and the whole 300-DPI stage pipeline — is unchanged. */
+export const MARGIN = { inner: 45, outer: 45, top: 36, bottom: 36 };
 export const CONTENT = { w: PAGE.w - MARGIN.inner - MARGIN.outer, h: PAGE.h - MARGIN.top - MARGIN.bottom };
 
 /** Stage width in CSS px for book blocks; rasterized at 2× → exactly 300 DPI. */
@@ -22,10 +24,6 @@ export const PT_PER_PX = CONTENT.w / STAGE_WIDTH_PX;
 export const GAP = 18;
 /** The card photo may take at most this fraction of the content height. */
 const PHOTO_MAX_FRACTION = 0.45;
-/** Never magnify a photo below this print resolution — small source photos
-    render smaller (and therefore sharper) instead of huge and soft.
-    (Owner-tuned: 110 trades a little softness for larger low-res cards.) */
-export const PHOTO_TARGET_DPI = 110;
 /** Smallest photo height worth printing; below this, move to the next page. */
 export const PHOTO_MIN_H = 90; // 1.25 in
 
@@ -97,17 +95,18 @@ export interface BookPlan {
   tocPages: number;
 }
 
-/** Left edge of the content box for a 1-based page number (mirrored gutter). */
+/** Left edge of the content box for a 1-based page number. Margins are
+    uniform now, but the parity hook stays in case a bound-book gutter ever
+    returns (single call site in bookPdf.ts). */
 export function pageContentLeft(pageNumber: number): number {
-  // Odd pages are recto (right-hand): the binding gutter is on their left.
   return pageNumber % 2 === 1 ? MARGIN.inner : MARGIN.outer;
 }
 
 /**
- * Fit the photo (source size in px) under maxH, left-aligned, aspect kept.
- * Width is capped by maxW (default: content box) AND by PHOTO_TARGET_DPI,
- * and height by the 45% ceiling, so a low-res photo is never blown up past
- * the point of printing soft.
+ * Fit the photo (source size in px) under maxH and maxW, left-aligned,
+ * aspect kept, with the 45%-of-page height ceiling. No print-resolution cap
+ * (owner-reviewed): photos fill the space they're given; the book builder's
+ * "photo may print soft" warning is the quality guard for low-res cards.
  */
 export function photoBox(
   photo: { w: number; h: number },
@@ -115,8 +114,7 @@ export function photoBox(
   maxWLimit = CONTENT.w,
 ): { x: number; w: number; h: number } {
   const cappedH = Math.min(maxH, CONTENT.h * PHOTO_MAX_FRACTION);
-  const maxW = Math.min(maxWLimit, (photo.w * 72) / PHOTO_TARGET_DPI);
-  const scale = Math.min(maxW / photo.w, cappedH / photo.h);
+  const scale = Math.min(maxWLimit / photo.w, cappedH / photo.h);
   // Left-aligned, matching the table and the instruction numbers.
   return { x: 0, w: photo.w * scale, h: photo.h * scale };
 }

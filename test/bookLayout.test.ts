@@ -46,13 +46,11 @@ describe("photoBox", () => {
     expect(box.w).toBeCloseTo(CONTENT.w);
   });
 
-  it("never magnifies a low-res photo below the target print DPI (110)", () => {
-    // A 443 px-wide card (real case from the first printed book) must not be
-    // blown up to full content width — cap it at PHOTO_TARGET_DPI.
-    const box = photoBox({ w: 443, h: 266 });
-    expect(box.w).toBeCloseTo((443 * 72) / 110);
-    const effectiveDpi = 443 / (box.w / 72);
-    expect(effectiveDpi).toBeCloseTo(110);
+  it("lets low-res photos fill the space (no DPI cap — owner's choice)", () => {
+    // A 443 px-wide card grows to the width limit; the book builder's
+    // "photo may print soft" warning is the quality guard instead.
+    const box = photoBox({ w: 443, h: 266 }, CONTENT.h * 0.45);
+    expect(box.w).toBeCloseTo(CONTENT.w, 0); // ±0.5pt — the 45% height ceiling grazes first
   });
 
   it("keeps the 45% ceiling even when offered more room", () => {
@@ -68,10 +66,11 @@ describe("photoBox", () => {
 });
 
 describe("pageContentLeft", () => {
-  it("mirrors the binding gutter by page parity", () => {
-    expect(pageContentLeft(1)).toBe(MARGIN.inner); // recto: gutter left
-    expect(pageContentLeft(2)).toBe(MARGIN.outer); // verso: gutter right
-    expect(pageContentLeft(3)).toBe(MARGIN.inner);
+  it("gives every page the same left margin (uniform, no gutter)", () => {
+    expect(pageContentLeft(1)).toBe(45);
+    expect(pageContentLeft(2)).toBe(45);
+    expect(pageContentLeft(3)).toBe(45);
+    expect(MARGIN.inner).toBe(MARGIN.outer);
   });
 });
 

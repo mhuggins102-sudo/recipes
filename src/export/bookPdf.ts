@@ -43,8 +43,6 @@ const SIDE_TABLE_MAX_FRACTION = 0.58;
 const SIDE_MIN_COL_PT = 150;
 /** Instructions column width when the photo sits to their right (spill layout). */
 const NARROW_COL_FRACTION = 0.55;
-/** Extra breathing room added per measured instruction item, pt. */
-const ITEM_SPACING_PT = 6;
 
 const TOC_TITLE = "Contents";
 
@@ -170,9 +168,12 @@ function measureInstructions(recipe: RecipeTree, stageWidthPx: number): InstrMea
   try {
     const instr = instructionsEl(recipe, 0, recipe.instructions.length);
     stage.appendChild(instr);
+    // Bare rect heights: item spacing lives in the DOM (li padding-bottom in
+    // .book-stage CSS), so the reserved slot matches the rendered raster and
+    // the photo lands exactly GAP below the last line.
     const headerH = (instr.querySelector("h3")?.getBoundingClientRect().height ?? 0) * PT_PER_PX;
     const itemHeights = [...instr.querySelectorAll("li")].map(
-      (li) => li.getBoundingClientRect().height * PT_PER_PX + ITEM_SPACING_PT,
+      (li) => li.getBoundingClientRect().height * PT_PER_PX,
     );
     return { headerH, itemHeights };
   } finally {
