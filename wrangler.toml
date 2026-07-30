@@ -1,11 +1,10 @@
 name = "recipe-tabulator"
 
 # Per-IP daily rate limit for /api/convert (functions/_middleware.ts).
-# Create the namespace and paste its id here (see README "Rate limiting"):
-#   npx wrangler kv namespace create RATE_KV
-# [[kv_namespaces]]
-# binding = "RATE_KV"
-# id = "<paste the id printed by the command above>"
+# The bound namespace is "recipe-tabulator-rate" (see README "Rate limiting").
+[[kv_namespaces]]
+binding = "RATE_KV"
+id = "b11f0f5300a44a24bf71856cd9f00458"
 compatibility_date = "2026-07-01"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "dist"
