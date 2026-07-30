@@ -90,7 +90,7 @@ export class PdfWriter {
    * Assemble the document. Object layout: 1 Catalog, 2 Pages, then per page a
    * Page + Contents pair, then one XObject per image, then Info; xref last.
    */
-  finish(title: string): Blob {
+  finish(title: string, producer = "Recipe Tabulator"): Blob {
     const P = this.pages.length;
     const I = this.images.length;
     const pageObj = (i: number) => 3 + i * 2;
@@ -167,7 +167,7 @@ export class PdfWriter {
       push("\nendstream\nendobj\n");
     });
 
-    obj(infoObj, `<< /Title ${pdfTextString(title)} /Producer (Recipe Tabulator) >>`);
+    obj(infoObj, `<< /Title ${pdfTextString(title)} /Producer ${pdfTextString(producer)} >>`);
 
     const xrefOffset = offset;
     push(`xref\n0 ${totalObjs + 1}\n0000000000 65535 f \n`);

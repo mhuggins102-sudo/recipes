@@ -17,6 +17,7 @@ import {
   type InstrMeasure,
   type RecipeMeasure,
 } from "./bookLayout";
+import { BUILD_ID } from "../buildId";
 import { getTheme, hexRgb, type BookTheme } from "./bookThemes";
 import { RASTER_OPTIONS, slugify } from "./image";
 import { canvasRgb, type ExportedPdf } from "./pdf";
@@ -402,7 +403,10 @@ export async function exportCookbookPdf(
     writer.addPage(PAGE.w, PAGE.h, placements, pageOptions);
   }
 
-  return { blob: writer.finish(album.title), filename: `${slugify(album.title)}.pdf` };
+  return {
+    blob: writer.finish(album.title, `Recipe Tabulator ${BUILD_ID} (${theme.id})`),
+    filename: `${slugify(album.title)}.pdf`,
+  };
 }
 
 /** Effective print DPI of a card photo at its placed size — warn below ~300. */
