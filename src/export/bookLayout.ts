@@ -23,8 +23,9 @@ export const GAP = 18;
 /** The card photo may take at most this fraction of the content height. */
 const PHOTO_MAX_FRACTION = 0.45;
 /** Never magnify a photo below this print resolution — small source photos
-    render smaller (and therefore sharper) instead of huge and soft. */
-export const PHOTO_TARGET_DPI = 150;
+    render smaller (and therefore sharper) instead of huge and soft.
+    (Owner-tuned: 110 trades a little softness for larger low-res cards.) */
+export const PHOTO_TARGET_DPI = 110;
 /** Smallest photo height worth printing; below this, move to the next page. */
 export const PHOTO_MIN_H = 90; // 1.25 in
 
@@ -72,6 +73,12 @@ export interface RecipeMeasure {
   side?: InstrMeasure;
   /** Width of the side instructions column, pt. */
   sideColW?: number;
+  /** Instructions measured at the capped column width used when the photo
+      sits to their right (spill layout); present when the recipe has both
+      a photo and instructions. */
+  narrow?: InstrMeasure;
+  /** Width of that capped instructions column, pt. */
+  narrowColW?: number;
 }
 
 export interface BookInputs {
@@ -97,21 +104,21 @@ export function pageContentLeft(pageNumber: number): number {
 }
 
 /**
- * Fit the photo (source size in px) under maxH, centered, aspect kept.
- * Width is capped by the content box AND by PHOTO_TARGET_DPI, and height by
- * the 45% ceiling, so a low-res photo is never blown up past the point of
- * printing soft.
+ * Fit the photo (source size in px) under maxH, left-aligned, aspect kept.
+ * Width is capped by maxW (default: content box) AND by PHOTO_TARGET_DPI,
+ * and height by the 45% ceiling, so a low-res photo is never blown up past
+ * the point of printing soft.
  */
 export function photoBox(
   photo: { w: number; h: number },
   maxH = CONTENT.h * PHOTO_MAX_FRACTION,
+  maxWLimit = CONTENT.w,
 ): { x: number; w: number; h: number } {
   const cappedH = Math.min(maxH, CONTENT.h * PHOTO_MAX_FRACTION);
-  const maxW = Math.min(CONTENT.w, (photo.w * 72) / PHOTO_TARGET_DPI);
+  const maxW = Math.min(maxWLimit, (photo.w * 72) / PHOTO_TARGET_DPI);
   const scale = Math.min(maxW / photo.w, cappedH / photo.h);
-  const w = photo.w * scale;
-  const h = photo.h * scale;
-  return { x: (CONTENT.w - w) / 2, w, h };
+  // Left-aligned, matching the table and the instruction numbers.
+  return { x: 0, w: photo.w * scale, h: photo.h * scale };
 }
 
 function instrTotal(im: InstrMeasure): number {
@@ -157,80 +164,66 @@ export function planBook(inputs: BookInputs): BookPlan {
   return { pages, recipeStartPage, tocPages };
 }
 
-function planRecipe(pages: PagePlan[], m: RecipeMeasure, r: number): void {
-  const tableH = Math.min(m.tableH, CONTENT.h);
-  const tableW = Math.min(m.tableW, CONTENT.w);
-  let placements: PlannedPlacement[] = [];
-  let y = 0;
+interface PackState {
+  placements: PlannedPlacement[];
+  y: number;
+}
 
-  // Side-by-side when the orchestrator measured a side column AND the whole
-  // instructions list fits beside the table on one page.
-  const sideH = m.side && m.sideColW ? instrTotal(m.side) : Infinity;
-  const useSide =
-    !!m.side && !!m.sideColW && m.side.itemHeights.length > 0 && Math.max(tableH, sideH) <= CONTENT.h;
-
-  if (useSide) {
-    placements.push({ kind: "table", recipe: r, x: 0, y: 0, w: tableW, h: tableH });
-    placements.push({
-      kind: "instructions",
-      recipe: r,
-      x: CONTENT.w - m.sideColW!,
-      y: 0,
-      w: m.sideColW!,
-      h: sideH,
-      from: 0,
-      to: m.side!.itemHeights.length,
-    });
-    y = Math.max(tableH, sideH) + GAP;
-  } else {
-    // Stacked: centered table on top, then greedy instruction packing that
-    // spills to "continued" pages, never splitting an item.
-    placements.push({
-      kind: "table",
-      recipe: r,
-      x: (CONTENT.w - tableW) / 2,
-      y: 0,
-      w: tableW,
-      h: tableH,
-    });
-    y = tableH + GAP;
-
-    const items = m.stacked.itemHeights;
-    let from = 0;
-    let headerH = m.stacked.headerH;
-    let freshPage = false;
-    while (from < items.length) {
-      let used = headerH;
-      let to = from;
-      while (to < items.length && y + used + items[to] <= CONTENT.h) {
-        used += items[to];
-        to++;
-      }
-      if (to === from && freshPage) {
-        // A single item taller than a whole page — place it clamped rather
-        // than looping forever (can't split an item).
-        used += Math.min(items[to], CONTENT.h - y - used);
-        to++;
-      }
-      if (to > from) {
-        placements.push({ kind: "instructions", recipe: r, x: 0, y, w: CONTENT.w, h: used, from, to });
-        y += used + GAP;
-        from = to;
-      }
-      if (from < items.length) {
-        pages.push({ placements });
-        placements = [
-          { kind: "heading", recipe: r, x: 0, y: 0, w: CONTENT.w, h: m.headingH, continued: true },
-        ];
-        y = m.headingH + GAP;
-        headerH = 0; // the continued heading replaces the "Instructions" sub-heading
-        freshPage = true;
-      }
+/** Greedy instruction packing at a given column width; spills to "continued"
+    pages, never splitting an item. Returns the open (unpushed) last page. */
+function packInstructions(
+  pages: PagePlan[],
+  state: PackState,
+  m: RecipeMeasure,
+  r: number,
+  im: InstrMeasure,
+  colW: number,
+): PackState {
+  const items = im.itemHeights;
+  let { placements, y } = state;
+  let from = 0;
+  let headerH = im.headerH;
+  let freshPage = false;
+  while (from < items.length) {
+    let used = headerH;
+    let to = from;
+    while (to < items.length && y + used + items[to] <= CONTENT.h) {
+      used += items[to];
+      to++;
+    }
+    if (to === from && freshPage) {
+      // A single item taller than a whole page — place it clamped rather
+      // than looping forever (can't split an item).
+      used += Math.min(items[to], CONTENT.h - y - used);
+      to++;
+    }
+    if (to > from) {
+      placements.push({ kind: "instructions", recipe: r, x: 0, y, w: colW, h: used, from, to });
+      y += used + GAP;
+      from = to;
+    }
+    if (from < items.length) {
+      pages.push({ placements });
+      placements = [
+        { kind: "heading", recipe: r, x: 0, y: 0, w: CONTENT.w, h: m.headingH, continued: true },
+      ];
+      y = m.headingH + GAP;
+      headerH = 0; // the continued heading replaces the "Instructions" sub-heading
+      freshPage = true;
     }
   }
+  return { placements, y };
+}
 
-  // The original card photo anchors the bottom of the last page — or gets a
-  // page of its own when there isn't a printable amount of room left.
+/** Anchor the photo at the bottom-left of the open page — or on its own
+    page when less than a printable amount of room remains. Pushes the page. */
+function finishWithPhoto(
+  pages: PagePlan[],
+  state: PackState,
+  m: RecipeMeasure,
+  r: number,
+): void {
+  let { placements, y } = state;
   if (m.photo) {
     const remaining = CONTENT.h - y;
     if (remaining >= PHOTO_MIN_H) {
@@ -245,6 +238,72 @@ function planRecipe(pages: PagePlan[], m: RecipeMeasure, r: number): void {
       ];
     }
   }
-
   pages.push({ placements });
+}
+
+function planRecipe(pages: PagePlan[], m: RecipeMeasure, r: number): void {
+  const tableH = Math.min(m.tableH, CONTENT.h);
+  const tableW = Math.min(m.tableW, CONTENT.w);
+  const table: PlannedPlacement = { kind: "table", recipe: r, x: 0, y: 0, w: tableW, h: tableH };
+
+  // A — narrow table with the whole instructions list beside it.
+  const sideH = m.side && m.sideColW ? instrTotal(m.side) : Infinity;
+  if (m.side && m.sideColW && m.side.itemHeights.length > 0 && Math.max(tableH, sideH) <= CONTENT.h) {
+    const placements: PlannedPlacement[] = [
+      table,
+      {
+        kind: "instructions",
+        recipe: r,
+        x: CONTENT.w - m.sideColW,
+        y: 0,
+        w: m.sideColW,
+        h: sideH,
+        from: 0,
+        to: m.side.itemHeights.length,
+      },
+    ];
+    finishWithPhoto(pages, { placements, y: Math.max(tableH, sideH) + GAP }, m, r);
+    return;
+  }
+
+  // Would the plain stacked layout overflow the page?
+  const stackedTotal = instrTotal(m.stacked);
+  const yAfterInstr = tableH + GAP + (stackedTotal ? stackedTotal + GAP : 0);
+  const instrSpills = stackedTotal > 0 && tableH + GAP + stackedTotal > CONTENT.h;
+  const photoPushedOut = !!m.photo && CONTENT.h - yAfterInstr < PHOTO_MIN_H;
+
+  // C — photo to the RIGHT of width-capped instructions when stacking spills.
+  if (m.photo && m.narrow && m.narrowColW && (instrSpills || photoPushedOut)) {
+    const photoColW = CONTENT.w - m.narrowColW - GAP;
+    const regionH = CONTENT.h - tableH - GAP;
+    const box = photoBox(m.photo, regionH, photoColW);
+    if (regionH >= PHOTO_MIN_H && box.h >= PHOTO_MIN_H) {
+      const placements: PlannedPlacement[] = [
+        table,
+        { kind: "photo", recipe: r, x: CONTENT.w - box.w, y: tableH + GAP, w: box.w, h: box.h },
+      ];
+      const state = packInstructions(
+        pages,
+        { placements, y: tableH + GAP },
+        m,
+        r,
+        m.narrow,
+        m.narrowColW,
+      );
+      pages.push({ placements: state.placements });
+      return;
+    }
+  }
+
+  // B/D — stacked: table on top, instructions below (spilling as needed),
+  // photo at the bottom of the last page or on its own page.
+  const state = packInstructions(
+    pages,
+    { placements: [table], y: tableH + GAP },
+    m,
+    r,
+    m.stacked,
+    CONTENT.w,
+  );
+  finishWithPhoto(pages, state, m, r);
 }

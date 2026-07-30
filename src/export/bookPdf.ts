@@ -41,6 +41,8 @@ interface MeasuredRecipe {
 const SIDE_TABLE_MAX_FRACTION = 0.58;
 /** …and only when the instructions column keeps a readable width. */
 const SIDE_MIN_COL_PT = 150;
+/** Instructions column width when the photo sits to their right (spill layout). */
+const NARROW_COL_FRACTION = 0.55;
 /** Extra breathing room added per measured instruction item, pt. */
 const ITEM_SPACING_PT = 6;
 
@@ -221,6 +223,14 @@ function measureRecipe(card: CardRecord): MeasuredRecipe {
     }
   }
 
+  // Capped-width instructions for the photo-right spill layout.
+  let narrow: InstrMeasure | undefined;
+  let narrowColW: number | undefined;
+  if (stacked.itemHeights.length) {
+    narrowColW = CONTENT.w * NARROW_COL_FRACTION;
+    narrow = measureInstructions(recipe, Math.round(narrowColW / PT_PER_PX));
+  }
+
   return {
     card,
     recipe,
@@ -236,6 +246,8 @@ function measureRecipe(card: CardRecord): MeasuredRecipe {
       stacked,
       side,
       sideColW,
+      narrow,
+      narrowColW,
     },
   };
 }

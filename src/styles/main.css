@@ -662,9 +662,11 @@ input.album-author {
 
 .book-stage .instructions .num {
   flex: none;
-  width: 52px;
-  text-align: right;
-  padding-right: 14px;
+  width: 44px;
+  /* Flush with the left margin (owner-reviewed) — the fixed width still
+     keeps wrapped step text aligned in its own column. */
+  text-align: left;
+  padding-right: 8px;
 }
 
 .book-stage .instructions .txt {
