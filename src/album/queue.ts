@@ -1,6 +1,6 @@
 import { convert } from "../api";
 import { blobToBase64 } from "../ui/image";
-import { getCards, updateCard, type AlbumRecord, type CardRecord } from "./store";
+import { getCard, getCards, updateCard, type AlbumRecord, type CardRecord } from "./store";
 
 // Client-driven fan-out: the server holds one conversion per request (with a
 // hard 270 s deadline), so an album is a queue of single /api/convert calls.
@@ -20,6 +20,17 @@ export interface AlbumQueue {
   readonly active: boolean;
   /** Set after a 429 — the server's message; cleared by kick(). */
   readonly pausedReason: string | null;
+}
+
+/** Base64 payload for a card's photo; one fresh-read retry covers WebKit's
+    stale file-backed blobs in legacy (pre-inline-bytes) albums. */
+async function imagePayload(card: CardRecord): Promise<string> {
+  try {
+    return await blobToBase64(card.image);
+  } catch {
+    const fresh = await getCard(card.id);
+    return blobToBase64(fresh?.image ?? card.image);
+  }
 }
 
 export function createAlbumQueue(
@@ -42,7 +53,7 @@ export function createAlbumQueue(
     onCardUpdate(card, "Converting…");
     try {
       const recipe = await convert(
-        { type: "image", payload: await blobToBase64(card.image), mediaType: "image/jpeg" },
+        { type: "image", payload: await imagePayload(card), mediaType: "image/jpeg" },
         () => onCardUpdate(card, "Reading the card…"),
       );
       card.recipe = recipe;

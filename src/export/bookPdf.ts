@@ -1,6 +1,6 @@
 import { toCanvas } from "html-to-image";
 import type { RecipeTree } from "../../shared/schema";
-import type { AlbumRecord, CardRecord } from "../album/store";
+import { getCard, type AlbumRecord, type CardRecord } from "../album/store";
 import { applyView, type ViewOptions } from "../quantity";
 import { renderTable } from "../render/table";
 import { INITIAL_VIEW } from "../ui/viewBar";
@@ -305,7 +305,7 @@ export async function exportCookbookPdf(
   // One JPEG XObject per card, shared across pages that show it.
   const photoIndex = new Map<string, number>();
   for (const m of measured) {
-    const bytes = new Uint8Array(await m.card.image.arrayBuffer());
+    const bytes = await photoBytes(m.card);
     photoIndex.set(m.card.id, writer.addJpeg(bytes, m.card.imageW, m.card.imageH));
   }
 
@@ -407,6 +407,27 @@ export async function exportCookbookPdf(
     blob: writer.finish(album.title, `Recipe Tabulator ${BUILD_ID} (${theme.id})`),
     filename: `${slugify(album.title)}.pdf`,
   };
+}
+
+/** Read a card photo's bytes. On failure, re-read the card from the store —
+    a fresh IndexedDB read returns a fresh handle, the workaround for
+    WebKit's stale file-backed blobs ("The object can not be found here."
+    in legacy albums); new albums store bytes inline and can't go stale. */
+async function photoBytes(card: CardRecord): Promise<Uint8Array<ArrayBuffer>> {
+  let blob = card.image;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return new Uint8Array(await blob.arrayBuffer());
+    } catch {
+      if (attempt >= 2) {
+        throw new Error(
+          `Couldn't read the photo for "${card.recipe?.title ?? "a recipe"}" — close and reopen the album, then try again.`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      blob = (await getCard(card.id))?.image ?? blob;
+    }
+  }
 }
 
 /** Effective print DPI of a card photo at its placed size — warn below ~300. */
