@@ -19,6 +19,8 @@ interface Env {
    * URL path can be exercised against localhost mocks. Never set in production.
    */
   ALLOW_UNSAFE_TEST_HOSTS?: string;
+  /** Per-IP daily conversion counter (see functions/_middleware.ts). */
+  RATE_KV?: KVNamespace;
 }
 
 interface ConvertRequest {
@@ -420,7 +422,9 @@ async function convertWithModel(
     const stream = client.messages.stream({
       model: MODEL,
       max_tokens: 16000,
-      system: SYSTEM_PROMPT,
+      // cache_control: album conversions arrive back-to-back, so the prompt
+      // prefix bills at ~0.1x for every card after the first (5-minute TTL).
+      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       output_config: {
         // Medium effort trims reasoning-token spend; extraction doesn't need
         // deep thinking, and reasoning tokens bill as output.
@@ -429,6 +433,9 @@ async function convertWithModel(
       messages,
     } as Anthropic.Messages.MessageStreamParams);
     const response = await stream.finalMessage();
+    // Visible in Cloudflare logs; cache_read_input_tokens > 0 on the second
+    // conversion of an album confirms the prompt cache is doing its job.
+    console.log("usage", JSON.stringify(response.usage));
 
     if (response.stop_reason === "refusal") {
       throw new HttpError(422, "The model declined to process this input.");

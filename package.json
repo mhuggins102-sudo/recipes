@@ -9,6 +9,7 @@
     "preview": "npm run build && wrangler pages dev",
     "deploy": "npm run build && wrangler pages deploy",
     "test": "vitest run",
+    "e2e": "playwright test",
     "typecheck": "tsc --noEmit && tsc --noEmit -p functions"
   },
   "dependencies": {
@@ -18,6 +19,8 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260722.1",
+    "@playwright/test": "^1.56.1",
+    "@types/node": "^26.1.2",
     "concurrently": "^10.0.4",
     "typescript": "^5.7.0",
     "vite": "^6.0.0",

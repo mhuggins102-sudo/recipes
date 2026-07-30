@@ -5,9 +5,12 @@ import { convert, type ConvertRequest } from "./api";
 import { downloadFile, exportTableImage, shareImage } from "./export/image";
 import { exportTablePdf } from "./export/pdf";
 import { setupPrintFit } from "./print";
+import { createAlbum, deleteAlbum, getAlbum, listAlbums } from "./album/store";
 import { applyView, unscaleQuantity, type ViewOptions } from "./quantity";
+import { renderInstructions } from "./render/instructions";
 import { renderTable } from "./render/table";
 import { SAMPLE_RECIPE } from "./sample";
+import { createAlbumView, type AlbumView } from "./ui/albumView";
 import { enableInlineEditing } from "./ui/editor";
 import { createInputPanel } from "./ui/inputPanel";
 import {
@@ -68,6 +71,11 @@ const viewBar = createViewBar(() => {
 const tableWrap = document.createElement("div");
 tableWrap.className = "table-wrap";
 
+// Classic numbered directions (model-written) — shown on screen below the
+// table; print and image/PDF exports keep the table-only format.
+const instrWrap = document.createElement("div");
+instrWrap.className = "instr-wrap";
+
 const jsonEditor = document.createElement("textarea");
 jsonEditor.className = "json-editor";
 jsonEditor.style.display = "none";
@@ -81,12 +89,28 @@ hint.className = "hint";
 hint.textContent =
   "Every cell is editable — click into it and type. Use Edit JSON to restructure the tree (move ingredients between steps, add branches).";
 
-resultSection.append(toolbar, viewBar.el, tableWrap, hint, belowToolbar, jsonEditor, jsonApply, jsonError);
+resultSection.append(
+  toolbar,
+  viewBar.el,
+  tableWrap,
+  instrWrap,
+  hint,
+  belowToolbar,
+  jsonEditor,
+  jsonApply,
+  jsonError,
+);
+
+const albumCta = button("linkish album-cta", "Have a whole box of recipe cards? Build a cookbook →");
+
+const albumsSection = document.createElement("section");
+albumsSection.className = "recents albums";
+albumsSection.style.display = "none";
 
 const recentsSection = document.createElement("section");
 recentsSection.className = "recents";
 
-app.append(header, errorBox, panel.el, resultSection, recentsSection);
+app.append(header, errorBox, panel.el, albumCta, resultSection, albumsSection, recentsSection);
 
 // --- State -----------------------------------------------------------------
 
@@ -175,11 +199,17 @@ function show(recipe: RecipeTree, view?: ViewOptions) {
 function rerenderTable() {
   if (!current) return;
   tableWrap.innerHTML = "";
+  instrWrap.innerHTML = "";
   // Render a derived view; `current` stays at 1× in the source's own style.
-  tableWrap.appendChild(renderTable(applyView(current, viewBar.view), viewBar.view.labels));
-  enableInlineEditing(tableWrap, () => current!, persistSoon, (text, kind) =>
-    kind === "quantity" || kind === "servings" ? unscaleQuantity(text, viewBar.view) : text,
-  );
+  const derived = applyView(current, viewBar.view);
+  tableWrap.appendChild(renderTable(derived, viewBar.view.labels));
+  const instructions = renderInstructions(derived);
+  if (instructions) instrWrap.appendChild(instructions);
+  for (const container of [tableWrap, instrWrap]) {
+    enableInlineEditing(container, () => current!, persistSoon, (text, kind) =>
+      kind === "quantity" || kind === "servings" ? unscaleQuantity(text, viewBar.view) : text,
+    );
+  }
 }
 
 function persistSoon(recipe: RecipeTree) {
@@ -379,4 +409,72 @@ function renderRecents() {
   }
 }
 
-renderRecents();
+async function renderAlbums() {
+  const albums = await listAlbums();
+  albumsSection.innerHTML = "";
+  albumsSection.style.display = albums.length ? "" : "none";
+  if (!albums.length) return;
+  const h2 = document.createElement("h2");
+  h2.textContent = "Cookbook albums";
+  albumsSection.appendChild(h2);
+  const ul = document.createElement("ul");
+  for (const album of albums) {
+    const li = document.createElement("li");
+    const a = document.createElement("a");
+    a.href = `#album/${album.id}`;
+    a.textContent = album.title;
+    const when = document.createElement("span");
+    when.className = "when";
+    when.textContent = `${album.cardOrder.length} card${album.cardOrder.length === 1 ? "" : "s"} · ${new Date(album.updatedAt).toLocaleDateString()}`;
+    const del = document.createElement("button");
+    del.className = "del";
+    del.textContent = "✕";
+    del.title = "Delete this album and its photos";
+    del.addEventListener("click", () => {
+      if (!confirm(`Delete the album "${album.title}" and its photos? This can't be undone.`)) return;
+      void deleteAlbum(album.id).then(renderAlbums);
+    });
+    li.append(a, when, del);
+    ul.appendChild(li);
+  }
+  albumsSection.appendChild(ul);
+}
+
+// --- Routing (home ⇄ album) ------------------------------------------------
+
+let albumView: AlbumView | null = null;
+const homeSections: HTMLElement[] = [panel.el, albumCta, resultSection, albumsSection, recentsSection];
+
+albumCta.addEventListener("click", async () => {
+  const album = await createAlbum();
+  location.hash = `#album/${album.id}`;
+});
+
+async function route() {
+  albumView?.dispose();
+  albumView?.el.remove();
+  albumView = null;
+  const match = /^#album\/(.+)$/.exec(location.hash);
+  if (match) {
+    const album = await getAlbum(match[1]);
+    if (album) {
+      clearError();
+      for (const section of homeSections) section.style.display = "none";
+      albumView = createAlbumView(album);
+      app.appendChild(albumView.el);
+      window.scrollTo({ top: 0 });
+      return;
+    }
+    location.hash = ""; // unknown album id — the hashchange re-routes home
+    return;
+  }
+  panel.el.style.display = "";
+  albumCta.style.display = "";
+  resultSection.style.display = current ? "" : "none";
+  recentsSection.style.display = "";
+  renderRecents();
+  void renderAlbums();
+}
+
+window.addEventListener("hashchange", () => void route());
+void route();

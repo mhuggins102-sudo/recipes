@@ -48,6 +48,21 @@ Open http://localhost:5173. Run tests with `npm test`, typecheck with
    production.
 4. Alternatively deploy from your machine: `npm run deploy`.
 
+## Rate limiting
+
+`/api/convert` spends real money per call, so `functions/_middleware.ts`
+enforces a per-IP daily cap (40 conversions) backed by Workers KV. Set it up
+once:
+
+```sh
+npx wrangler kv namespace create RATE_KV
+```
+
+then uncomment the `[[kv_namespaces]]` block in `wrangler.toml` and paste the
+printed id (for dashboard-managed Pages projects, bind it instead under
+Settings → Functions → KV namespace bindings, name `RATE_KV`). Without the
+binding the guard is skipped — fine for local dev, unwise in production.
+
 ## Cost & model
 
 The model is a single constant in `shared/schema.ts` (`MODEL`). Default is

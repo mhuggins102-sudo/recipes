@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   build: {
@@ -9,5 +9,9 @@ export default defineConfig({
       // Local dev: vite serves the frontend, wrangler serves Pages Functions.
       "/api": "http://localhost:8788",
     },
+  },
+  test: {
+    // e2e/ is Playwright's (npm run e2e), not vitest's.
+    include: ["test/**/*.test.ts"],
   },
 });
