@@ -17,9 +17,10 @@ import {
   type InstrMeasure,
   type RecipeMeasure,
 } from "./bookLayout";
+import { getTheme, hexRgb, type BookTheme } from "./bookThemes";
 import { RASTER_OPTIONS, slugify } from "./image";
 import { canvasRgb, type ExportedPdf } from "./pdf";
-import { PdfWriter } from "./pdfWriter";
+import { PdfWriter, type PageOptions } from "./pdfWriter";
 
 // Cookbook generator: measure every recipe's blocks, plan pages (pure math in
 // bookLayout.ts), then rasterize block-by-block and assemble with PdfWriter.
@@ -46,9 +47,9 @@ const NARROW_COL_FRACTION = 0.55;
 
 const TOC_TITLE = "Contents";
 
-function mountStage(widthPx: number): HTMLDivElement {
+function mountStage(widthPx: number, themeClass = ""): HTMLDivElement {
   const stage = document.createElement("div");
-  stage.className = "book-stage";
+  stage.className = themeClass ? `book-stage ${themeClass}` : "book-stage";
   stage.style.width = `${widthPx}px`;
   document.body.appendChild(stage);
   return stage;
@@ -61,8 +62,12 @@ interface Rasterized {
   hPx: number;
 }
 
-async function rasterize(writer: PdfWriter, el: HTMLElement): Promise<Rasterized> {
-  const canvas = await toCanvas(el, RASTER_OPTIONS);
+async function rasterize(
+  writer: PdfWriter,
+  el: HTMLElement,
+  options: typeof RASTER_OPTIONS,
+): Promise<Rasterized> {
+  const canvas = await toCanvas(el, options);
   const image = await writer.addRgb(canvasRgb(canvas), canvas.width, canvas.height);
   const result = {
     image,
@@ -162,9 +167,13 @@ function tocEl(
 }
 
 /** Measure an instructions block rendered at the given stage width. */
-function measureInstructions(recipe: RecipeTree, stageWidthPx: number): InstrMeasure {
+function measureInstructions(
+  recipe: RecipeTree,
+  stageWidthPx: number,
+  themeClass: string,
+): InstrMeasure {
   if (!recipe.instructions?.length) return { headerH: 0, itemHeights: [] };
-  const stage = mountStage(stageWidthPx);
+  const stage = mountStage(stageWidthPx, themeClass);
   try {
     const instr = instructionsEl(recipe, 0, recipe.instructions.length);
     stage.appendChild(instr);
@@ -181,11 +190,12 @@ function measureInstructions(recipe: RecipeTree, stageWidthPx: number): InstrMea
   }
 }
 
-/** Measure one recipe's blocks on live offscreen stages. */
-function measureRecipe(card: CardRecord): MeasuredRecipe {
+/** Measure one recipe's blocks on live offscreen stages (theme-styled — fonts
+    change metrics, so measurement and rasterization share the same class). */
+function measureRecipe(card: CardRecord, theme: BookTheme): MeasuredRecipe {
   const recipe = card.recipe!;
   const view = card.view ?? { ...INITIAL_VIEW };
-  const stage = mountStage(STAGE_WIDTH_PX);
+  const stage = mountStage(STAGE_WIDTH_PX, theme.className);
   let tableWpx: number;
   let tableWpt: number;
   let tableHpt: number;
@@ -211,7 +221,7 @@ function measureRecipe(card: CardRecord): MeasuredRecipe {
     stage.remove();
   }
 
-  const stacked = measureInstructions(recipe, STAGE_WIDTH_PX);
+  const stacked = measureInstructions(recipe, STAGE_WIDTH_PX, theme.className);
 
   // Side-by-side instructions: only for narrow tables with a readable column.
   let side: InstrMeasure | undefined;
@@ -220,7 +230,7 @@ function measureRecipe(card: CardRecord): MeasuredRecipe {
     const colW = CONTENT.w - tableWpt - GAP;
     if (colW >= SIDE_MIN_COL_PT) {
       sideColW = colW;
-      side = measureInstructions(recipe, Math.round(colW / PT_PER_PX));
+      side = measureInstructions(recipe, Math.round(colW / PT_PER_PX), theme.className);
     }
   }
 
@@ -229,7 +239,7 @@ function measureRecipe(card: CardRecord): MeasuredRecipe {
   let narrowColW: number | undefined;
   if (stacked.itemHeights.length) {
     narrowColW = CONTENT.w * NARROW_COL_FRACTION;
-    narrow = measureInstructions(recipe, Math.round(narrowColW / PT_PER_PX));
+    narrow = measureInstructions(recipe, Math.round(narrowColW / PT_PER_PX), theme.className);
   }
 
   return {
@@ -254,8 +264,8 @@ function measureRecipe(card: CardRecord): MeasuredRecipe {
 }
 
 /** Measure one TOC row and the TOC heading, from a representative sample. */
-function measureToc(): { entryH: number; headerH: number } {
-  const stage = mountStage(STAGE_WIDTH_PX);
+function measureToc(theme: BookTheme): { entryH: number; headerH: number } {
+  const stage = mountStage(STAGE_WIDTH_PX, theme.className);
   try {
     const sample = tocEl([{ title: "Sample recipe title", page: 100 }], 0, 1);
     stage.appendChild(sample);
@@ -274,8 +284,10 @@ export async function exportCookbookPdf(
   const included = cards.filter((c) => c.included && c.state === "done" && c.recipe);
   if (!included.length) throw new Error("No converted recipes are included in the book.");
 
-  const measured = included.map(measureRecipe);
-  const toc = measureToc();
+  const theme = getTheme(album.theme);
+  const rasterOptions = { ...RASTER_OPTIONS, backgroundColor: theme.pageBg };
+  const measured = included.map((card) => measureRecipe(card, theme));
+  const toc = measureToc(theme);
   const plan = planBook({
     toc: album.includeToc,
     tocEntryH: toc.entryH,
@@ -300,6 +312,8 @@ export async function exportCookbookPdf(
     const pageNo = p + 1;
     const left = pageContentLeft(pageNo);
     const placements = [];
+    const pageOptions: PageOptions = {};
+    if (theme.pageBg !== "#ffffff") pageOptions.background = hexRgb(theme.pageBg);
     for (const placed of plan.pages[p].placements) {
       const m = placed.recipe !== undefined ? measured[placed.recipe] : undefined;
       let image: number;
@@ -320,6 +334,7 @@ export async function exportCookbookPdf(
             : placed.kind === "instructions"
               ? Math.round(placed.w / PT_PER_PX)
               : STAGE_WIDTH_PX,
+          theme.className,
         );
         let raster: Rasterized;
         try {
@@ -330,7 +345,7 @@ export async function exportCookbookPdf(
           else if (placed.kind === "table" && m) stage.appendChild(tableEl(m));
           else if (placed.kind === "instructions" && m)
             stage.appendChild(instructionsEl(m.recipe, placed.from!, placed.to!));
-          raster = await rasterize(writer, stage);
+          raster = await rasterize(writer, stage, rasterOptions);
         } finally {
           stage.remove();
         }
@@ -347,16 +362,22 @@ export async function exportCookbookPdf(
           h = Math.min(placed.h, raster.hPx * PT_PER_PX * scale);
         }
       }
-      placements.push({
-        image,
-        x: left + x,
-        // Flip from top-based content coordinates to PDF's bottom-left origin.
-        y: PAGE.h - MARGIN.top - placed.y - h,
-        w,
-        h,
-      });
+      const pdfX = left + x;
+      // Flip from top-based content coordinates to PDF's bottom-left origin.
+      const pdfY = PAGE.h - MARGIN.top - placed.y - h;
+      if (placed.kind === "photo" && theme.photoFrame) {
+        (pageOptions.frames ??= []).push({
+          x: pdfX,
+          y: pdfY,
+          w,
+          h,
+          color: hexRgb(theme.photoFrame.color),
+          width: theme.photoFrame.width,
+        });
+      }
+      placements.push({ image, x: pdfX, y: pdfY, w, h });
     }
-    writer.addPage(PAGE.w, PAGE.h, placements);
+    writer.addPage(PAGE.w, PAGE.h, placements, pageOptions);
   }
 
   return { blob: writer.finish(album.title), filename: `${slugify(album.title)}.pdf` };

@@ -13,6 +13,8 @@ export interface AlbumRecord {
   /** Cookbook title. */
   title: string;
   author?: string;
+  /** Book design theme id (see export/bookThemes.ts); absent = standard. */
+  theme?: string;
   includeToc: boolean;
   createdAt: number;
   updatedAt: number;
